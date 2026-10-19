@@ -136,76 +136,9 @@ Item {
         blurEnabled: true
         blurMax: 64
         blur: Config.lockBlur * root.progress
-        brightness: -root.dim * root.progress
-        Behavior on brightness { NumberAnimation { duration: Theme.anim.normal } }
+        brightness: -0.45 * root.progress
         saturation: 0.15 * root.progress
         scale: 1 + 0.02 * root.progress
-    }
-
-    // ── Readability: a bright or busy picture is dimmed more ──
-
-    // The snapshot is read at low resolution once it is there. The blur darkens it by
-    // 0.45 as always; only a picture so bright that it would still show above `readable`
-    // after that (behind the clock and password, or on average) is darkened further, and
-    // only by the amount that brings it back down to that level, at most to 0.8.
-    property real dim: dimBase
-    readonly property real dimBase: 0.45
-    readonly property real dimMax: 0.8
-    // Luminance (0..1) a blurred picture may have behind light text
-    readonly property real readable: 0.3
-
-    Canvas {
-        id: probe
-
-        width: 128
-        height: 72
-        visible: false
-        property string loadedUrl: ""
-
-        function analyse() {
-            if (root.snapshot === "")
-                return;
-            const url = `file://${root.snapshot}`;
-            if (loadedUrl !== url) {
-                loadedUrl = url;
-                loadImage(url);
-                return;
-            }
-            requestPaint();
-        }
-
-        onImageLoaded: requestPaint()
-
-        onPaint: {
-            if (loadedUrl === "" || !isImageLoaded(loadedUrl))
-                return;
-            const ctx = getContext("2d");
-            ctx.drawImage(loadedUrl, 0, 0, width, height);
-            function meanOf(x, y, w, h) {
-                const data = ctx.getImageData(x, y, w, h).data;
-                let sum = 0, n = 0;
-                for (let i = 0; i < data.length; i += 4) {
-                    sum += (0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2]) / 255;
-                    n++;
-                }
-                return n === 0 ? 0 : sum / n;
-            }
-            // The whole picture and the middle third, where the clock and the password sit
-            const whole = meanOf(0, 0, width, height);
-            const middle = meanOf(Math.floor(width / 3), Math.floor(height / 3), Math.floor(width / 3), Math.floor(height / 3));
-            const bright = Math.max(whole, middle);
-            // What the base dimming leaves: bright - dimBase. Above `readable`, dim exactly
-            // the difference more; otherwise nothing changes
-            root.dim = Math.min(root.dimMax, Math.max(root.dimBase, bright - root.readable));
-        }
-    }
-
-    Connections {
-        target: shot
-        function onStatusChanged() {
-            if (shot.status === Image.Ready)
-                probe.analyse();
-        }
     }
 
     // ── Top right: user@host ─────────────────────────────────
