@@ -104,6 +104,11 @@ Scope {
             root.show("; ");
         }
 
+        // Opens with text already typed, e.g. `qs ipc call launcher search "/ notes"`
+        function search(text: string): void {
+            root.show(text);
+        }
+
         // Opens with that text typed, e.g. `qs ipc call launcher mode "s daft punk"`
         function mode(text: string): void {
             root.show(text);

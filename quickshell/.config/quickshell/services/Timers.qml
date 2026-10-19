@@ -132,8 +132,24 @@ Singleton {
         playSound();
     }
 
+    // The sound runs as a tracked process, so done or snooze can cut it off at once
     function playSound() {
-        Quickshell.execDetached(["sh", "-c", 'command -v pw-play >/dev/null && test -f "$0" && pw-play "$0"', sound]);
+        soundProc.running = false;
+        soundProc.command = ["pw-play", sound];
+        soundProc.running = true;
+    }
+
+    function stopSound() {
+        soundProc.running = false;
+    }
+
+    Process {
+        id: soundProc
+    }
+
+    onRingingChanged: {
+        if (ringing.length === 0)
+            stopSound();
     }
 
     function check() {

@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Layouts
 import Quickshell
+import Quickshell.Io
 import qs.components
 import qs.config
 import qs.services
@@ -397,9 +398,75 @@ Item {
                     }
 
                     // Longer text: Claude's answer, a clipboard entry
-                    // A picture (clipboard history): shown large, its own size when it fits
+                    // The first lines of a text file (file search), read when it is selected
+                    Process {
+                        id: textPeek
+                        property string path: root.selected?.textPreview ?? ""
+                        property string snippet: ""
+                        onPathChanged: {
+                            snippet = "";
+                            if (path !== "") {
+                                command = ["head", "-c", "3000", path];
+                                running = true;
+                            }
+                        }
+                        stdout: StdioCollector {
+                            onStreamFinished: textPeek.snippet = this.text.split("\n").slice(0, 28).join("\n")
+                        }
+                    }
+
                     Rectangle {
-                        visible: (root.selected?.preview ?? "") !== ""
+                        visible: (root.selected?.textPreview ?? "") !== "" && textPeek.snippet !== ""
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: Math.min(360, snippetLabel.implicitHeight + 24)
+                        Layout.bottomMargin: 18
+                        color: Theme.surface
+                        border.width: 1
+                        border.color: Theme.border
+                        clip: true
+
+                        Text {
+                            id: snippetLabel
+                            anchors { left: parent.left; right: parent.right; top: parent.top; margins: 12 }
+                            text: textPeek.snippet
+                            color: Theme.textDim
+                            font.family: Theme.font
+                            font.pixelSize: 13
+                            wrapMode: Text.NoWrap
+                            elide: Text.ElideRight
+                        }
+                    }
+
+                    // A thumbnail for a video or PDF (file search), made when it is selected and
+                    // kept in $XDG_RUNTIME_DIR/qs-thumbs
+                    Process {
+                        id: thumbPeek
+                        property string source: (root.selected?.thumbSource || root.selected?.pdfSource) ?? ""
+                        property bool isPdf: (root.selected?.pdfSource ?? "") !== ""
+                        property string file: ""
+                        property string ready: ""
+                        onSourceChanged: {
+                            ready = "";
+                            if (source === "")
+                                return;
+                            file = `${Quickshell.env("XDG_RUNTIME_DIR")}/qs-thumbs/${Qt.md5(source)}.png`;
+                            command = ["sh", "-c", isPdf
+                                ? 'mkdir -p "$(dirname "$2")" && { [ -s "$2" ] || { pdftoppm -png -r 40 -f 1 -l 1 -singlefile "$1" "${2%.png}"; }; }'
+                                : 'mkdir -p "$(dirname "$2")" && { [ -s "$2" ] || ffmpegthumbnailer -i "$1" -o "$2" -s 640 -q 8; }',
+                                "thumb", source, file];
+                            running = true;
+                        }
+                        onExited: code => {
+                            if (code === 0 && source !== "")
+                                ready = file;
+                        }
+                    }
+
+                    // A picture (clipboard history or a file, or the thumbnail of a video or PDF):
+                    // shown large
+                    Rectangle {
+                        readonly property string shown: (root.selected?.preview ?? "") !== "" ? root.selected.preview : thumbPeek.ready
+                        visible: shown !== ""
                         Layout.fillWidth: true
                         // A fixed height, so the pane does not jump while a picture loads
                         Layout.preferredHeight: 300
@@ -413,7 +480,7 @@ Item {
                             id: previewImage
                             anchors.fill: parent
                             anchors.margins: 1
-                            source: (root.selected?.preview ?? "") !== "" ? `file://${root.selected.preview}` : ""
+                            source: parent.shown !== "" ? `file://${parent.shown}` : ""
                             // Big screenshots are scaled down once on load, not on every paint
                             sourceSize.width: 1200
                             fillMode: Image.PreserveAspectFit

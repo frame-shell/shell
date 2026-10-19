@@ -548,13 +548,27 @@ Item {
             return [info("searching …")];
         if (Files.results.length === 0)
             return [info("nothing found", "hidden and git-ignored files are skipped")];
-        return Files.results.map(f => ({
-            kind: "file", file: f,
-            title: f.name, desc: Files.pretty(f.dir),
-            category: f.isDir ? "folder" : "file", glyph: f.isDir ? "/" : "·", tint: Theme.secondary, icon: fileIcon(f.name, f.isDir),
-            rows: [["path", Files.pretty(f.path)]],
-            keys: "enter open · shift+enter terminal here"
-        }));
+        return Files.results.map(f => {
+            const ext = f.isDir || !f.name.includes(".") ? "" : f.name.slice(f.name.lastIndexOf(".") + 1).toLowerCase();
+            // Pictures show themselves, text files their first lines (in the info pane)
+            const picture = ["png", "jpg", "jpeg", "webp", "gif", "svg", "avif", "bmp"].includes(ext);
+            const text = !f.isDir && (ext === "" || ["txt", "md", "json", "toml", "yaml", "yml", "conf", "ini", "cfg", "log", "csv",
+                "sh", "fish", "py", "js", "ts", "qml", "lua", "rs", "go", "c", "h", "cpp", "css", "html", "xml", "nix", "env"].includes(ext));
+            // Videos and PDFs get a thumbnail made when selected (ffmpegthumbnailer, pdftoppm)
+            const video = ["mp4", "mkv", "webm", "mov", "avi", "m4v"].includes(ext);
+            const pdf = ext === "pdf";
+            return {
+                kind: "file", file: f,
+                title: f.name, desc: Files.pretty(f.dir),
+                category: f.isDir ? "folder" : "file", glyph: f.isDir ? "/" : "·", tint: Theme.secondary,
+                icon: picture ? f.path : fileIcon(f.name, f.isDir),
+                preview: picture ? f.path : "",
+                textPreview: text ? f.path : "",
+                thumbSource: video ? f.path : "", pdfSource: pdf ? f.path : "",
+                rows: [["path", Files.pretty(f.path)]],
+                keys: "enter open · shift+enter terminal here"
+            };
+        });
     }
 
     // ── ssh ──────────────────────────────────────────────────
