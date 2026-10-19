@@ -1,0 +1,35 @@
+#!/bin/sh
+# frameshell greeter session for greetd: the lockscreen's look as the login screen.
+# Quickshell draws it (greeter/shell.qml); the compositor underneath is the small one
+# CachyOS ships with noctalia-greeter, or cage when that is missing. Installed by
+# `frame login` to /usr/share/frameshell/greeter and set as greetd's default_session.
+set -u
+
+DIR="${FRAME_GREETER_DIR:-/usr/share/frameshell/greeter}"
+
+# Nothing may paint the VT; the compositor logs to syslog through greetd
+exec >/dev/null 2>&1
+
+# greetd's PAM session has no runtime dir for the greeter user
+XDG_RUNTIME_DIR="/tmp/frameshell-greeter-$(id -u)"
+export XDG_RUNTIME_DIR
+mkdir -p "$XDG_RUNTIME_DIR"
+chmod 700 "$XDG_RUNTIME_DIR"
+export XDG_CACHE_HOME="$XDG_RUNTIME_DIR/cache"
+export XDG_CONFIG_HOME="$XDG_RUNTIME_DIR/config"
+export XDG_DATA_HOME="$XDG_RUNTIME_DIR/data"
+export XDG_STATE_HOME="$XDG_RUNTIME_DIR/state"
+export QT_QPA_PLATFORM=wayland
+export WLR_LOG="${WLR_LOG:-error}"
+unset WAYLAND_DISPLAY
+
+if [ -x /usr/bin/noctalia-greeter-compositor ]; then
+    export GREETER_BIN=/usr/bin/qs
+    if command -v dbus-run-session >/dev/null 2>&1; then
+        exec dbus-run-session -- /usr/bin/noctalia-greeter-compositor -- -p "$DIR"
+    fi
+    exec /usr/bin/noctalia-greeter-compositor -- -p "$DIR"
+elif command -v cage >/dev/null 2>&1; then
+    exec cage -s -- qs -p "$DIR"
+fi
+exit 1

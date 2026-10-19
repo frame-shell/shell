@@ -12,34 +12,8 @@ import qs.config
 //   2. a ScreencopyView snapshot of every screen, saved to $XDG_RUNTIME_DIR
 //   3. the real session lock; each LockSurface blurs its snapshot in
 // Unlocking plays the surface animation backwards, then releases the lock.
-//
-// As the login screen (`frame login`): greetd starts the session without a greeter and
-// ~/.local/state/frameshell/login says "lock", so the shell locks as soon as it is up.
-// A marker in $XDG_RUNTIME_DIR remembers the first unlock, so a restarted shell in the
-// same session does not lock again.
 Scope {
     id: root
-
-    readonly property string loginStatePath: `${Quickshell.env("HOME")}/.local/state/frameshell/login`
-    readonly property string unlockedMarker: `${Quickshell.env("XDG_RUNTIME_DIR")}/frame-session-unlocked`
-
-    // Only the very first shell of the session locks; any other start lets wallpapers that
-    // a previous shell paused run again (it may have gone away while the screen was locked)
-    Process {
-        id: loginCheck
-        command: ["sh", "-c", `[ "$(cat "$1" 2>/dev/null)" = lock ] && [ ! -e "$2" ]`, "frame-login", root.loginStatePath, root.unlockedMarker]
-        running: true
-        onExited: code => {
-            if (code === 0)
-                root.lock();
-            else
-                root.wallpapers("resume-if-paused");
-        }
-    }
-
-    function markUnlocked() {
-        Quickshell.execDetached(["touch", unlockedMarker]);
-    }
 
     signal aboutToLock()
 
@@ -127,7 +101,6 @@ Scope {
             sessionLock.locked = false;
             lockContext.reset();
             root.hidingForLock = false;
-            root.markUnlocked();
             root.wallpapers("resume");
         }
     }
