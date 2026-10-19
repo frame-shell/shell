@@ -40,9 +40,7 @@ Item {
     function filter(items, query, type) {
         const q = query.trim().toLowerCase();
         return items.filter(w => {
-            // "web" wallpapers (HTML) are not something linux-wallpaperengine can show
-            if (w.kind === "web")
-                return false;
+            // frame-wallpaper list leaves out what the engine cannot show (web, presets, gif scenes)
             const kind = w.kind;
             if (type !== "all" && kind !== type)
                 return false;

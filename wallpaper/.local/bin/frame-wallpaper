@@ -16,6 +16,7 @@
 #   frame-wallpaper state                     current state as JSON
 #   frame-wallpaper set <path> [screen]       set a wallpaper on one screen ("*" = all) and apply
 #   frame-wallpaper option <key> <value>      fps <n> | volume <0-100> | scaling fill|fit | pause true|false
+#                                           mature true|false (Workshop items rated Mature in the list)
 #   frame-wallpaper backend [both|mpv|image]  show or change the backend ("engine" means both)
 #   frame-wallpaper apply                     (re)start the backends from the state
 #   frame-wallpaper pause | resume            freeze the backends (the lockscreen does this) and
@@ -33,7 +34,7 @@ WORKSHOP="${WALLPAPER_WORKSHOP:-${XDG_DATA_HOME:-$HOME/.local/share}/Steam/steam
 # This file is stowed from <repo>/wallpaper/.local/bin, so the repo is three levels up
 REPO="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/../../.." && pwd)"
 FOLDERS=("${WALLPAPER_DIR:-$HOME/Pictures/wallpapers}" "$REPO/assets/wallpapers")
-DEFAULT_STATE='{"backend":"both","fps":30,"volume":0,"scaling":"fill","pause":true,"screens":{}}'
+DEFAULT_STATE='{"backend":"both","fps":30,"volume":0,"scaling":"fill","pause":true,"mature":true,"screens":{}}'
 
 die() {
     echo "frame-wallpaper: $*" >&2
@@ -69,12 +70,19 @@ update() {
 
 # ── Wallpapers ────────────────────────────────────────────────
 
-# scene | video | web for Workshop folders, image | video for files, unknown otherwise
+# scene | video | web | preset | gif for Workshop folders, image | video for files, unknown
+# otherwise. linux-wallpaperengine shows scene and video only: "web" is HTML, a "preset" is
+# just settings for another (web) wallpaper and has no content of its own, "gif" is a scene
+# stored as gifscene.pkg, which the engine cannot read.
 kind_of() {
-    local path=$1
+    local path=$1 kind
     if [[ -d $path ]]; then
         if [[ -f $path/project.json ]]; then
-            jq -r '(.type // "scene") | ascii_downcase' "$path/project.json"
+            kind="$(jq -r '(.type // (if .dependency or .preset then "preset" else "scene" end)) | ascii_downcase' "$path/project.json")"
+            if [[ $kind == scene && ! -f $path/scene.pkg && ! -f $path/scene.json ]]; then
+                [[ -f $path/gifscene.pkg ]] && kind=gif || kind=unknown
+            fi
+            echo "$kind"
         else
             echo unknown
         fi
@@ -110,17 +118,20 @@ thumbnail() {
 }
 
 cmd_list() {
-    local backend dir folder file kind preview name
+    local backend dir folder file kind preview name mature
     backend="$(state | jq -r .backend)"
+    mature="$(state | jq -r 'if .mature == false then false else true end')"
     {
         if [[ $backend == both && -d $WORKSHOP ]]; then
             for dir in "$WORKSHOP"/*/; do
                 dir="${dir%/}"
                 [[ -f $dir/project.json ]] || continue
-                jq -c --arg path "$dir" --arg id "$(basename "$dir")" '
-                    ((.type // "scene") | ascii_downcase) as $kind
-                    | select($kind == "scene" or $kind == "video" or $kind == "web")
-                    | { id: $id, title: (.title // $id), kind: $kind, source: "workshop",
+                # Only what the engine can show (see kind_of); the rest would end as a plain color
+                kind="$(kind_of "$dir")"
+                [[ $kind == scene || $kind == video ]] || continue
+                [[ $mature == true ]] || [[ "$(jq -r '.contentrating // ""' "$dir/project.json")" != Mature ]] || continue
+                jq -c --arg path "$dir" --arg id "$(basename "$dir")" --arg kind "$kind" '
+                    { id: $id, title: (.title // $id), kind: $kind, source: "workshop",
                         tags: ((.tags // []) | map(ascii_downcase)), path: $path,
                         preview: (if .preview then $path + "/" + .preview else "" end) }' \
                     "$dir/project.json" 2>/dev/null || true
@@ -149,17 +160,51 @@ monitors() {
     hyprctl monitors -j | jq -r '.[].name'
 }
 
+# All backend processes, old and new (the process name is cut to 15 characters, so the
+# command line is matched instead)
+all_backend_pids() {
+    { pgrep -f '(^|/)linux-wallpaperengine( |$)'; pgrep -x mpvpaper; pgrep -x swaybg; } 2>/dev/null || true
+}
+
 stop_backends() {
-    # The process name is cut to 15 characters, so match the command line instead
     pkill -f '(^|/)linux-wallpaperengine( |$)' 2>/dev/null || true
     pkill -x mpvpaper 2>/dev/null || true
     pkill -x swaybg 2>/dev/null || true
     sleep 0.2
 }
 
-# Runs a backend in its own session so it outlives this script and the shell
+# Ends the backends that ran before a switch: they stay up until the new ones draw on top
+# of them (same background layer, newer on top), so the switch is Hyprland's layer fade
+# instead of a gap with a bare background. The engine needs a moment for its shaders
+# before the first frame, so the wait is a little longer than the layer taking.
+stop_old_backends() {
+    local old=$1 pid i
+    [[ -n $old ]] || return 0
+    for ((i = 0; i < 40; i++)); do
+        new_layers_up "$old" && break
+        sleep 0.1
+    done
+    sleep 0.6
+    for pid in $old; do kill "$pid" 2>/dev/null || true; done
+}
+
+# Every monitor has a background layer from a process that is not in the old set
+new_layers_up() {
+    local old=" $1 " monitor pid found
+    for monitor in $(monitors); do
+        found=0
+        for pid in $(hyprctl layers -j | jq -r --arg m "$monitor" '.[$m].levels["0"][]?.pid'); do
+            [[ $old == *" $pid "* ]] || { found=1; break; }
+        done
+        ((found)) || return 1
+    done
+    return 0
+}
+
+# Runs a backend in its own session so it outlives this script and the shell. The engine
+# repeats one harmless DBus complaint thousands of times, that line stays out of the log.
 spawn() {
-    setsid -f "$@" >>"$LOG" 2>&1 </dev/null
+    setsid -f sh -c 'exec "$@" 2>&1 | grep --line-buffered -v "DBus error" >>"$0"' "$LOG" "$@" </dev/null
 }
 
 background_color() {
@@ -240,7 +285,8 @@ cmd_apply() {
     local settings backend monitor entry path kind
     settings="$(state)"
     backend="$(jq -r .backend <<<"$settings")"
-    stop_backends
+    local old
+    old="$(all_backend_pids | tr '\n' ' ')"
     for monitor in $(monitors); do
         # A wallpaper set for this screen wins over the one for all screens
         entry="$(jq -c --arg m "$monitor" '.screens[$m] // .screens["*"] // {}' <<<"$settings")"
@@ -253,6 +299,7 @@ cmd_apply() {
             spawn swaybg -o "$monitor" -c "$(background_color)"
         fi
     done
+    stop_old_backends "$old"
 }
 
 cmd_set() {
@@ -285,7 +332,12 @@ cmd_option() {
         pause)
             [[ $value == true || $value == false ]] || die "pause: true or false"
             update --argjson v "$value" '.pause = $v' ;;
-        *) die "options: fps, volume, scaling, pause" ;;
+        mature)
+            # Workshop items rated "Mature" in the list (false hides them, e.g. for a screen recording)
+            [[ $value == true || $value == false ]] || die "mature: true or false"
+            update --argjson v "$value" '.mature = $v'
+            return 0 ;;
+        *) die "options: fps, volume, scaling, pause, mature" ;;
     esac
     cmd_apply
 }

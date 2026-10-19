@@ -55,6 +55,8 @@ local function type_at()
         return
     end
     at_timer:set_enabled(false)
+    local f = io.open((os.getenv("XDG_RUNTIME_DIR") or "/tmp") .. "/frame-at.log", "a")
+    if f then f:write("typed after " .. at_waited .. " ms, held=" .. tostring(held) .. "\n"); f:close() end
     hl.exec_cmd("wtype @")
 end
 at_timer = hl.timer(type_at, { timeout = 20, type = "repeat" })
