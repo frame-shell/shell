@@ -92,9 +92,10 @@ Singleton {
         if (JSON.stringify(all) !== JSON.stringify(root.volumes))
             root.volumes = all;
         for (const letter of Object.keys(status).sort()) {
+            // Each fader is its own channel (Game and System are two, also on a Mini)
             const channel = String(status[letter].channel ?? "");
-            const key = ["game", "system"].includes(channel.toLowerCase()) ? "game" : channel.toLowerCase();
-            list.push({ key, label: key === "game" ? "game · sys" : channel.toLowerCase(), fader: letter, channel: channel.toLowerCase() });
+            const key = channel.toLowerCase();
+            list.push({ key, label: key, fader: letter, channel: key });
             next[key] = {
                 level: Math.round((volumes[channel] ?? 0) / 255 * 100),
                 muted: String(status[letter].mute_state ?? "Unmuted") !== "Unmuted"
