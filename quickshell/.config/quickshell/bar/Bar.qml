@@ -193,7 +193,15 @@ Scope {
 
                     Bracket { text: "[" }
 
+                    // Infinite canvas (frame layout canvas): a minimap instead of workspaces
+                    CanvasMap {
+                        visible: Canvas.enabled
+                        leftPadding: 4
+                        rightPadding: 4
+                    }
+
                     Row {
+                        visible: !Canvas.enabled
                         leftPadding: 4
                         rightPadding: 4
                         spacing: 4

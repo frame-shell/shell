@@ -18,7 +18,7 @@ Singleton {
     property var rows: []
     property bool loaded: false
 
-    readonly property var groupOrder: ["shell", "apps", "windows", "workspaces", "media", "other"]
+    readonly property var groupOrder: ["shell", "apps", "canvas", "windows", "workspaces", "media", "other"]
 
     function refresh() {
         proc.running = true;

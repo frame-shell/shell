@@ -11,6 +11,8 @@ hl.on("hyprland.start", function()
     hl.exec_cmd("~/.local/bin/frame-wallpaper apply")
     -- Clipboard history for the launcher (;)
     hl.exec_cmd("command -v cliphist >/dev/null && wl-paste --watch cliphist store")
+    -- GoXLR faders and mutes for the shell; does nothing without GoXLR Utility
+    hl.exec_cmd("command -v goxlr-daemon >/dev/null && goxlr-daemon")
 end)
 
 local function shell(target, action)
@@ -32,5 +34,21 @@ hl.config({
 -- Each require is its own scope in Hyprland, so an error in one file leaves the others working
 require("frame/apps")
 require("frame/hotkeys")
+
+-- Layout picked in `frame install` or with `frame layout tiling|canvas`; the normal
+-- tiling needs nothing, the infinite canvas lives in frame/canvas.lua
+local function layout()
+    local home = os.getenv("XDG_STATE_HOME") or ((os.getenv("HOME") or "") .. "/.local/state")
+    local f = io.open(home .. "/frameshell/layout", "r")
+    if not f then
+        return "tiling"
+    end
+    local mode = (f:read("*l") or ""):match("^%s*(%a+)") or "tiling"
+    f:close()
+    return mode
+end
+if layout() == "canvas" then
+    require("frame/canvas")
+end
 -- Written by `frame theme`; missing until the first run, which must not stop the rest
 pcall(require, "frame/colors")
