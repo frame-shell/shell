@@ -18,4 +18,8 @@ end
 
 take("SUPER + E", hl.dsp.exec_cmd("dolphin"), { description = "frame apps · Dolphin" })
 take("SUPER + B", hl.dsp.exec_cmd("zen-browser"), { description = "frame apps · Zen" })
+-- Programs that ask for $BROWSER (gh auth login, xdg-open fallbacks) get Zen, not the
+-- distro's firefox; the autostart pushes Hyprland's environment to systemd, so
+-- terminals opened later see it too
+hl.env("BROWSER", "zen-browser")
 take("SUPER + SHIFT + E", hl.dsp.exec_cmd("zeditor"), { description = "frame apps · Zed" })
