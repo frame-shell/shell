@@ -34,9 +34,17 @@ Singleton {
         return props["stream.monitor"] === "true" || props["stream.monitor"] === true;
     }
 
+    // "GoXLR Music" in the config matches "GoXLR Music" and "GoXLRMini Music" (the Mini
+    // names its devices that way); spaces and case do not matter
+    function channelKey(text) {
+        return String(text ?? "").toLowerCase().replace(/\s+/g, "").replace(/^goxlr(mini)?/, "");
+    }
+
     function findDevice(list, label) {
-        const wanted = String(label).toLowerCase();
-        return list.find(n => (n.description ?? "").toLowerCase() === wanted || (n.nickname ?? "").toLowerCase() === wanted) ?? null;
+        const wanted = channelKey(label);
+        if (wanted === "")
+            return null;
+        return list.find(n => channelKey(n.description) === wanted || channelKey(n.nickname) === wanted) ?? null;
     }
 
     function appName(node) {

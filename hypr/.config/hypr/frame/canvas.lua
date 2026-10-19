@@ -5,13 +5,16 @@
 --
 -- Hyprland has no camera, so moving the view moves every window of the workspace the
 -- other way; the normal window animation makes that glide. A window's place on the
--- canvas is its place on screen plus the camera. The camera of each workspace is kept in
--- ~/.local/state/frameshell/canvas, so a config reload does not lose your spot.
--- The bar draws a minimap from $XDG_RUNTIME_DIR/frame-canvas.json, written here.
+-- canvas is its place in Hyprland's layout plus the camera of its workspace; with more
+-- than one monitor each one has its own canvas at the monitor's position, so a window
+-- can be dragged from one to the other in the overview. The camera of each workspace is
+-- kept in ~/.local/state/frameshell/canvas, so a config reload does not lose your spot.
+-- The bar draws a minimap and the overview (Super+wheel) its map from
+-- $XDG_RUNTIME_DIR/frame-canvas.json, written here.
 --
 -- Floating windows may sit anywhere outside the screen (misc.float_force_onscreen = 0,
 -- the default). With several monitors, a window half off one screen shows on the
--- neighbouring one; each monitor keeps its own canvas (its workspace).
+-- neighbouring one.
 
 local HOME = os.getenv("HOME") or ""
 local STATE = (os.getenv("XDG_STATE_HOME") or (HOME .. "/.local/state")) .. "/frameshell/canvas"
@@ -69,6 +72,37 @@ local function view_of(ws)
     return { x = m.x, y = m.y, w = m.width / s, h = m.height / s }
 end
 
+-- Every monitor with its visible workspace, the view in layout coordinates and its camera
+local function views()
+    local out = {}
+    for _, m in ipairs(hl.get_monitors() or {}) do
+        local ws = m.active_workspace
+        if ws and not ws.special then
+            local v = view_of(ws)
+            if v then
+                v.ws, v.monitor, v.cam = ws, m, cam_of(ws)
+                out[#out + 1] = v
+            end
+        end
+    end
+    return out
+end
+
+-- The view whose canvas has global point gx, gy; otherwise the nearest one
+local function view_at(gx, gy)
+    local best, best_d
+    for _, v in ipairs(views()) do
+        local x1, y1 = v.x + v.cam.x, v.y + v.cam.y
+        local dx = math.max(x1 - gx, 0, gx - (x1 + v.w))
+        local dy = math.max(y1 - gy, 0, gy - (y1 + v.h))
+        local d = dx * dx + dy * dy
+        if not best_d or d < best_d then
+            best, best_d = v, d
+        end
+    end
+    return best
+end
+
 local function canvas_windows(ws)
     local out = {}
     for _, w in ipairs(hl.get_workspace_windows(ws) or {}) do
@@ -77,6 +111,17 @@ local function canvas_windows(ws)
         end
     end
     return out
+end
+
+-- A window on any monitor's visible workspace, by address
+local function find_window(address)
+    for _, v in ipairs(views()) do
+        for _, w in ipairs(canvas_windows(v.ws)) do
+            if w.address == address then
+                return w, v
+            end
+        end
+    end
 end
 
 local function box(w)
@@ -118,9 +163,22 @@ end
 
 -- ── Moving the view ──────────────────────────────────────────
 
--- Moves the camera by dx, dy: every window of the workspace goes the other way
-local function pan(dx, dy)
-    local ws = active_ws()
+-- A fullscreen window pins the view; the overview and the minimap end it first
+local function leave_fullscreen(ws)
+    if ws and ws.has_fullscreen then
+        local fw = ws.fullscreen_window
+        if fw then
+            run(hl.dsp.window.fullscreen({ window = sel(fw) }))
+        else
+            run(hl.dsp.window.fullscreen())
+        end
+    end
+end
+
+-- Moves the camera of ws (default: the focused one) by dx, dy: every window of the
+-- workspace goes the other way
+local function pan(dx, dy, ws)
+    ws = ws or active_ws()
     if not ws or ws.has_fullscreen then
         return
     end
@@ -137,21 +195,64 @@ local function pan(dx, dy)
     snapshot()
 end
 
--- Puts canvas point x, y in the middle of the screen
+local function ws_of_monitor(name)
+    for _, v in ipairs(views()) do
+        if v.monitor.name == name then
+            return v.ws
+        end
+    end
+    return active_ws()
+end
+
+-- Dragging empty canvas (quickshell/canvas/CanvasDesk.qml) sends many small steps: the
+-- windows and the camera move at once, the state file and the maps follow on drag_done
+local function drag_by(name, dx, dy)
+    local ws = ws_of_monitor(name)
+    if not ws or ws.has_fullscreen then
+        return
+    end
+    dx, dy = math.floor(dx + 0.5), math.floor(dy + 0.5)
+    if dx == 0 and dy == 0 then
+        return
+    end
+    for _, w in ipairs(canvas_windows(ws)) do
+        run(hl.dsp.window.move({ x = -dx, y = -dy, relative = true, window = sel(w) }))
+    end
+    local c = cam_of(ws)
+    c.x, c.y = c.x + dx, c.y + dy
+end
+
+local function drag_done()
+    save_cams()
+    snapshot()
+end
+
+-- The same for the monitor with that name (minimap in the bar of another screen)
+local function pan_on(name, dx, dy)
+    for _, v in ipairs(views()) do
+        if v.monitor.name == name then
+            pan(dx, dy, v.ws)
+            return
+        end
+    end
+    pan(dx, dy)
+end
+
+-- Puts global canvas point x, y in the middle of the screen whose canvas it is on
 local function look_at(x, y)
-    local ws = active_ws()
-    local v = view_of(ws)
+    local v = view_at(x, y)
     if not v then
         return
     end
-    local c = cam_of(ws)
-    pan(x - (c.x + v.w / 2), y - (c.y + v.h / 2))
+    leave_fullscreen(v.ws)
+    pan(x - (v.x + v.cam.x + v.w / 2), y - (v.y + v.cam.y + v.h / 2), v.ws)
 end
 
 local function center_on(w)
-    local v = view_of(w.workspace)
+    local ws = w.workspace
+    local v = view_of(ws)
     if v then
-        pan(w.at.x + w.size.x / 2 - (v.x + v.w / 2), w.at.y + w.size.y / 2 - (v.y + v.h / 2))
+        pan(w.at.x + w.size.x / 2 - (v.x + v.w / 2), w.at.y + w.size.y / 2 - (v.y + v.h / 2), ws)
     end
 end
 
@@ -200,6 +301,73 @@ local function focus_dir(name)
     run(hl.dsp.focus({ window = sel(best) }))
     if not fully_visible(box(best), v) then
         center_on(best)
+    end
+end
+
+-- Picked in the overview: focus the window (on whichever monitor) and bring it to the middle
+local function pick(address)
+    local w = find_window(address)
+    if not w then
+        return
+    end
+    leave_fullscreen(w.workspace)
+    run(hl.dsp.focus({ window = sel(w) }))
+    center_on(w)
+end
+
+-- Dragged in the overview: puts the window's top left corner at global canvas point x, y.
+-- A point on another monitor's canvas moves the window to that monitor first.
+local function move_to(address, x, y)
+    local w, own = find_window(address)
+    if not w then
+        return
+    end
+    local target = view_at(x + w.size.x / 2, y + w.size.y / 2) or own
+    if target.ws.id ~= own.ws.id then
+        run(hl.dsp.window.move({ workspace = tostring(target.ws.id), follow = false, window = sel(w) }))
+    end
+    run(hl.dsp.window.move({ x = math.floor(x - target.cam.x), y = math.floor(y - target.cam.y), window = sel(w) }))
+    snapshot()
+end
+
+-- F in the overview: fullscreen on the screen the window is (mostly) on. A window hanging
+-- over another monitor's canvas moves there first, so it fills the screen it sits on.
+local function fullscreen_on(address)
+    local w, own = find_window(address)
+    if not w then
+        return
+    end
+    local gx, gy = w.at.x + own.cam.x + w.size.x / 2, w.at.y + own.cam.y + w.size.y / 2
+    local target = view_at(gx, gy) or own
+    if target.ws.id ~= own.ws.id then
+        run(hl.dsp.window.move({ workspace = tostring(target.ws.id), follow = false, window = sel(w) }))
+        w = find_window(address) or w
+    end
+    leave_fullscreen(target.ws)
+    run(hl.dsp.focus({ window = sel(w) }))
+    -- Leaving fullscreen later should show the window, not empty canvas
+    if not fully_visible(box(w), target) then
+        center_on(w)
+    end
+    run(hl.dsp.window.fullscreen({ window = sel(w) }))
+    snapshot()
+end
+
+-- Dragged by its corner in the overview: the window's new size in pixels
+local function resize_to(address, width, height)
+    local w = find_window(address)
+    if not w then
+        return
+    end
+    run(hl.dsp.window.resize({ x = math.max(100, math.floor(width)), y = math.max(80, math.floor(height)), relative = false, window = sel(w) }))
+    snapshot()
+end
+
+-- Q in the overview: asks the window to close (like the title bar's x, not a kill)
+local function close_window(address)
+    local w = find_window(address)
+    if w then
+        run(hl.dsp.window.close({ window = sel(w) }))
     end
 end
 
@@ -337,7 +505,7 @@ local function release()
     os.remove(SNAPSHOT)
 end
 
--- ── Minimap data for the bar ─────────────────────────────────
+-- ── Map data for the bar and the overview ────────────────────
 
 local function jstr(s)
     return '"' .. (tostring(s):gsub('[%c"\\]', function(ch)
@@ -347,24 +515,29 @@ end
 
 local last_snapshot = ""
 
--- { workspace, camera: { x, y }, view: { w, h }, windows: [{ x, y, w, h, active, class, title }] }
--- in canvas coordinates; only written when something changed
+-- { monitors: [{ name, focused, workspace, x, y, w, h, camera: { x, y } }],
+--   windows: [{ address, monitor, x, y, w, h, active, class, title }] }
+-- Everything in global canvas coordinates: layout position plus the camera of the
+-- window's workspace, so each monitor's canvas lies where the monitor is. Only written
+-- when something changed.
 snapshot = function()
-    local ws = active_ws()
-    local v = view_of(ws)
-    if not v then
+    local active = hl.get_active_window()
+    local mons, wins = {}, {}
+    for _, v in ipairs(views()) do
+        mons[#mons + 1] = string.format('{"name":%s,"focused":%s,"workspace":%s,"x":%d,"y":%d,"w":%d,"h":%d,"camera":{"x":%d,"y":%d}}',
+            jstr(v.monitor.name), v.monitor.focused and "true" or "false", jstr(v.ws.id),
+            math.floor(v.x), math.floor(v.y), math.floor(v.w), math.floor(v.h), math.floor(v.cam.x), math.floor(v.cam.y))
+        for _, w in ipairs(canvas_windows(v.ws)) do
+            wins[#wins + 1] = string.format('{"address":%s,"monitor":%s,"x":%d,"y":%d,"w":%d,"h":%d,"active":%s,"class":%s,"title":%s}',
+                jstr(w.address or ""), jstr(v.monitor.name),
+                math.floor(w.at.x + v.cam.x), math.floor(w.at.y + v.cam.y), math.floor(w.size.x), math.floor(w.size.y),
+                (active and active.address == w.address) and "true" or "false", jstr(w.class or ""), jstr(w.title or ""))
+        end
+    end
+    if #mons == 0 then
         return
     end
-    local c = cam_of(ws)
-    local active = hl.get_active_window()
-    local parts = {}
-    for _, w in ipairs(canvas_windows(ws)) do
-        parts[#parts + 1] = string.format('{"x":%d,"y":%d,"w":%d,"h":%d,"active":%s,"class":%s,"title":%s}',
-            math.floor(w.at.x - v.x + c.x), math.floor(w.at.y - v.y + c.y), math.floor(w.size.x), math.floor(w.size.y),
-            (active and active.address == w.address) and "true" or "false", jstr(w.class or ""), jstr(w.title or ""))
-    end
-    local text = string.format('{"workspace":%s,"camera":{"x":%d,"y":%d},"view":{"w":%d,"h":%d},"windows":[%s]}\n',
-        jstr(ws.id), math.floor(c.x), math.floor(c.y), math.floor(v.w), math.floor(v.h), table.concat(parts, ","))
+    local text = string.format('{"monitors":[%s],"windows":[%s]}\n', table.concat(mons, ","), table.concat(wins, ","))
     if text == last_snapshot then
         return
     end
@@ -390,40 +563,62 @@ hl.window_rule({
     center = true,
 })
 
-hl.on("window.open_early", function(w)
+-- A handler that fails must not put Hyprland's error bar on the screen: the window
+-- handed to an event can already be half gone (window.destroy), and a window that
+-- disappears while the list is read raises too. Errors go to the log instead.
+local function on(event, fn)
+    hl.on(event, function(...)
+        local ok, err = pcall(fn, ...)
+        if not ok then
+            print("frame canvas: " .. event .. ": " .. tostring(err))
+        end
+    end)
+end
+
+on("window.open_early", function(w)
     if w.floating then
         native_float[w.address] = true
     end
 end)
 
-hl.on("window.open", function(w)
+on("window.open", function(w)
     place_new(w)
     snapshot()
 end)
 
-hl.on("window.destroy", function(w)
-    native_float[w.address] = nil
-    snapshot()
+-- The window is being torn down here; its fields may already be gone, and the window
+-- list still has it for a moment, so the snapshot waits for the next timer tick
+on("window.destroy", function(w)
+    local ok, address = pcall(function()
+        return w.address
+    end)
+    if ok and address then
+        native_float[address] = nil
+    end
 end)
 
-hl.on("window.close", function()
-    snapshot()
-end)
-hl.on("window.active", function()
-    snapshot()
-end)
-hl.on("window.move_to_workspace", function()
-    snapshot()
-end)
-hl.on("workspace.active", function()
-    snapshot()
-end)
-hl.on("config.reloaded", float_all)
+on("window.close", snapshot)
+on("window.active", snapshot)
+on("window.move_to_workspace", snapshot)
+on("workspace.active", snapshot)
+on("config.reloaded", float_all)
 
--- Mouse drags do not send an event; a cheap look twice a second keeps the minimap right
-hl.timer(snapshot, { timeout = 500, type = "repeat" })
+-- Mouse drags do not send an event; a cheap look twice a second keeps the maps right
+-- (and catches the window that just closed)
+hl.timer(function()
+    pcall(snapshot)
+end, { timeout = 500, type = "repeat" })
 
+-- The distro config (CachyOS) uses Super+wheel and Super+Ctrl+arrows and the wheel for
+-- workspaces and Super+Shift+arrows to move windows; a key bound twice runs both, so
+-- those binds are dropped first (hl.unbind: one bind per call, modifiers spelled like
+-- the other bind, see shell.lua)
 local function bind(keys, fn, text)
+    for _, spelling in ipairs({ keys, (keys:gsub("CTRL", "CONTROL")) }) do
+        for _ = 1, 4 do
+            pcall(hl.unbind, spelling)
+        end
+    end
     hl.bind(keys, fn, { description = "frame canvas · " .. text })
 end
 
@@ -451,7 +646,8 @@ end, "scroll right")
 bind("SUPER + CTRL + SHIFT + mouse_up", function()
     pan(-WHEEL_PX, 0)
 end, "scroll left")
-bind("SUPER + CTRL + F", function()
+bind("SUPER + CTRL + F", hl.dsp.window.fullscreen(), "fullscreen on / off")
+bind("SUPER + CTRL + C", function()
     local w = hl.get_active_window()
     if w and w.floating then
         center_on(w)
@@ -460,10 +656,44 @@ end, "center the window")
 bind("SUPER + CTRL + H", home, "back to the start")
 bind("SUPER + CTRL + G", tidy, "tidy into a grid")
 
--- For the bar (click on the minimap) and frame: hyprctl eval 'frame_canvas.look_at(0, 0)'
+-- Super+wheel: zoom out into the overview (quickshell/canvas/CanvasOverview.qml), zoom
+-- back in on the window under the cursor. The overview takes plain wheel, drag and clicks itself.
+bind("SUPER + mouse_down", hl.dsp.exec_cmd("qs ipc call overview zoomOut"), "zoom out · overview")
+bind("SUPER + mouse_up", hl.dsp.exec_cmd("qs ipc call overview zoomIn"), "zoom in")
+
+-- While the overview is open, Super + mouse must not drag or resize the windows behind
+-- it (Hyprland's mouse binds work through the overlay). The binds are the distro's
+-- (CachyOS: config/binds.lua) and come back the same way when the overview closes.
+local DRAG_BINDS = {
+    { "SUPER + mouse:272", hl.dsp.window.drag() },
+    { "SUPER + mouse:273", hl.dsp.window.resize() },
+}
+local function overview(open)
+    for _, b in ipairs(DRAG_BINDS) do
+        for _ = 1, 4 do
+            pcall(hl.unbind, b[1])
+        end
+    end
+    if not open then
+        for _, b in ipairs(DRAG_BINDS) do
+            hl.bind(b[1], b[2], b[3])
+        end
+    end
+end
+
+-- For the bar (minimap), the overview and frame: hyprctl eval 'frame_canvas.look_at(0, 0)'
 frame_canvas = {
+    overview = overview,
     pan = pan,
+    pan_on = pan_on,
+    drag_by = drag_by,
+    drag_done = drag_done,
     look_at = look_at,
+    select = pick,
+    move_to = move_to,
+    fullscreen = fullscreen_on,
+    resize_to = resize_to,
+    close_window = close_window,
     home = home,
     tidy = tidy,
     release = release,

@@ -20,12 +20,18 @@ Scope {
         }
     }
 
-    function show() {
-        if (open)
+    // preset: text to start with, e.g. "; " for the clipboard history
+    function show(preset) {
+        if (open) {
+            if (preset)
+                view.preset(preset);
             return;
+        }
         window.screen = focusedScreen();
         open = true;
         view.reset();
+        if (preset)
+            view.preset(preset);
     }
 
     function hide() {
@@ -91,6 +97,16 @@ Scope {
 
         function open(): void {
             root.show();
+        }
+
+        // Super+V: the clipboard history (cliphist), like Windows
+        function clipboard(): void {
+            root.show("; ");
+        }
+
+        // Opens with that text typed, e.g. `qs ipc call launcher mode "s daft punk"`
+        function mode(text: string): void {
+            root.show(text);
         }
 
         function close(): void {

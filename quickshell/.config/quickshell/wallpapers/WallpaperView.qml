@@ -40,8 +40,10 @@ Item {
     function filter(items, query, type) {
         const q = query.trim().toLowerCase();
         return items.filter(w => {
-            // "web" scenes count as scenes in the filter
-            const kind = w.kind === "web" ? "scene" : w.kind;
+            // "web" wallpapers (HTML) are not something linux-wallpaperengine can show
+            if (w.kind === "web")
+                return false;
+            const kind = w.kind;
             if (type !== "all" && kind !== type)
                 return false;
             return q === "" || `${w.title} ${(w.tags ?? []).join(" ")}`.toLowerCase().includes(q);
@@ -266,6 +268,8 @@ Item {
                 Item {
                     Layout.fillWidth: true
                     Layout.fillHeight: true
+                    // The settings column must not push the tiles out; both sides get firm widths
+                    Layout.minimumWidth: 480
 
                     Label {
                         anchors { left: parent.left; top: parent.top; margins: 24 }
@@ -378,6 +382,8 @@ Item {
                 // Settings
                 ColumnLayout {
                     Layout.preferredWidth: 360
+                    Layout.minimumWidth: 360
+                    Layout.maximumWidth: 360
                     Layout.fillHeight: true
                     Layout.margins: 22
                     Layout.topMargin: 26

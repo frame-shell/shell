@@ -18,6 +18,8 @@
 #   frame-wallpaper option <key> <value>      fps <n> | volume <0-100> | scaling fill|fit | pause true|false
 #   frame-wallpaper backend [both|mpv|image]  show or change the backend ("engine" means both)
 #   frame-wallpaper apply                     (re)start the backends from the state
+#   frame-wallpaper pause | resume            freeze the backends (the lockscreen does this) and
+#                                             let them run again (Wallpaper Engine is restarted)
 #   frame-wallpaper stop
 #
 # Not tested on a real system yet. linux-wallpaperengine flags follow its README.
@@ -176,10 +178,19 @@ start_on() {
     pause="$(jq -r .pause <<<"$settings")"
 
     if [[ -d $path ]]; then
-        local args=(--screen-root "$monitor" --bg "$path" --fps "$fps" --scaling "$scaling")
-        if [[ $volume == 0 ]]; then args+=(--silent); else args+=(--volume "$volume"); fi
+        # The background layer, like swaybg and mpvpaper: on its default "bottom" layer the
+        # wallpaper would take the clicks meant for the canvas desk behind the windows
+        local args=(--screen-root "$monitor" --bg "$path" --fps "$fps" --scaling "$scaling" --layer background)
         [[ $pause == true ]] || args+=(--no-fullscreen-pause)
-        spawn linux-wallpaperengine "${args[@]}"
+        if [[ $volume == 0 ]]; then
+            # Muted: no PipeWire streams at all. Quickshell's PipeWire code has crashed when
+            # these streams came and went, which took the lockscreen down with it.
+            args+=(--silent --no-audio-processing)
+            SDL_AUDIODRIVER=dummy spawn linux-wallpaperengine "${args[@]}"
+        else
+            args+=(--volume "$volume")
+            spawn linux-wallpaperengine "${args[@]}"
+        fi
     elif [[ $kind == video ]]; then
         local opts flags=()
         opts="loop panscan=$([[ $scaling == fill ]] && echo 1.0 || echo 0.0)"
@@ -190,6 +201,39 @@ start_on() {
     else
         spawn swaybg -o "$monitor" -i "$path" -m "$scaling"
     fi
+}
+
+backend_pids() {
+    { pgrep -f '(^|/)linux-wallpaperengine( |$)'; pgrep -x mpvpaper; } 2>/dev/null || true
+}
+
+PAUSED_MARK="${XDG_RUNTIME_DIR:-/tmp}/frame-wallpaper-paused"
+
+# Frozen while the screen is locked: nothing of it is visible behind the blurred snapshot.
+# The marker lets a freshly started shell know there is something to resume.
+cmd_pause() {
+    local pid
+    for pid in $(backend_pids); do kill -STOP "$pid" 2>/dev/null || true; done
+    touch "$PAUSED_MARK"
+}
+
+# Lets them run again. linux-wallpaperengine does not come back from a lock on its own
+# (the compositor stops asking it for frames and it waits forever), so it is started anew;
+# mpvpaper and swaybg just continue.
+cmd_resume() {
+    local pid
+    for pid in $(backend_pids); do kill -CONT "$pid" 2>/dev/null || true; done
+    rm -f "$PAUSED_MARK"
+    if pgrep -f '(^|/)linux-wallpaperengine( |$)' >/dev/null 2>&1; then
+        echo "$(date '+%F %T') - restarting linux-wallpaperengine after the lock" >>"$LOG"
+        cmd_apply
+    fi
+}
+
+# For a shell that starts while the backends are still paused (the one that paused them is gone)
+cmd_resume_if_paused() {
+    [[ -e $PAUSED_MARK ]] && cmd_resume
+    return 0
 }
 
 cmd_apply() {
@@ -271,6 +315,9 @@ case "${1:-}" in
     option) shift; cmd_option "$@" ;;
     backend) shift; cmd_backend "$@" ;;
     apply) cmd_apply ;;
+    pause) cmd_pause ;;
+    resume) cmd_resume ;;
+    resume-if-paused) cmd_resume_if_paused ;;
     stop) stop_backends ;;
     *) sed -n '2,/^set -euo/p' "$0" | sed '$d; s/^# \{0,1\}//' ;;
 esac

@@ -4,9 +4,10 @@ import Quickshell
 import Quickshell.Services.Mpris
 import qs.components
 import qs.config
+import qs.services
 
 // Card under the media segment of the bar while the mouse is on it: cover, title,
-// progress and play/pause. Next/previous only show when the player supports them
+// progress, play/pause and the player's volume (scrolling on the bar segment changes it too). Next/previous only show when the player supports them
 // (Spotify does, a YouTube tab in the browser usually does not).
 PopupWindow {
     id: root
@@ -25,6 +26,9 @@ PopupWindow {
     }
 
     readonly property bool canSkip: (player?.canGoNext ?? false) || (player?.canGoPrevious ?? false)
+    readonly property bool hasVolume: player?.volumeSupported ?? false
+
+    onOpenChanged: Spotify.cardOpen = open
 
     function format(seconds) {
         const s = Math.max(0, Math.floor(seconds || 0));
@@ -54,14 +58,16 @@ PopupWindow {
     }
 
     component Control: TuiButton {
+        id: control
+
         property string glyph
         implicitWidth: 38
         implicitHeight: 30
 
         Text {
             anchors.centerIn: parent
-            text: parent.glyph
-            color: parent.hovered ? Theme.text : Theme.secondary
+            text: control.glyph
+            color: control.hovered ? Theme.text : Theme.secondary
             font.family: Theme.iconFont
             font.pixelSize: 15
         }
@@ -180,6 +186,36 @@ PopupWindow {
                     Layout.preferredWidth: 44
                     horizontalAlignment: Text.AlignRight
                     text: (root.player?.length ?? 0) > 0 ? root.format(root.player.length) : "live"
+                    color: Theme.muted
+                    font.pixelSize: 13
+                }
+            }
+
+            // The player's own volume over MPRIS (Spotify's, apart from the app mixer)
+            RowLayout {
+                Layout.columnSpan: 2
+                Layout.fillWidth: true
+                visible: root.hasVolume
+                spacing: 10
+
+                Label {
+                    Layout.preferredWidth: 44
+                    text: "vol"
+                    color: Theme.muted
+                    font.pixelSize: 13
+                }
+                TuiSlider {
+                    Layout.fillWidth: true
+                    value: root.player?.volume ?? 0
+                    onMoved: value => {
+                        if (root.player)
+                            root.player.volume = value;
+                    }
+                }
+                Label {
+                    Layout.preferredWidth: 44
+                    horizontalAlignment: Text.AlignRight
+                    text: `${Math.round((root.player?.volume ?? 0) * 100)}%`
                     color: Theme.muted
                     font.pixelSize: 13
                 }

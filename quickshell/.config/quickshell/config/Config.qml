@@ -18,7 +18,8 @@ Singleton {
     // goxlr-utility HTTP API (fader levels and mutes)
     readonly property string goxlrApi: "http://localhost:14564"
     // App mixer routes → PipeWire device description, as shown by `wpctl status`.
-    // Rename the right side if your GoXLR devices are called differently.
+    // "GoXLR Music" also matches the Mini's "GoXLRMini Music"; rename the right side
+    // if your devices are called differently.
     readonly property var goxlrOutputs: ({
         system: "GoXLR System",
         game: "GoXLR Game",

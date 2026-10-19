@@ -18,15 +18,27 @@ Singleton {
 
     property bool available: false
     property string serial: ""
-    // [{ key, label, fader, level (0..100), muted }] in fader order A..D
+    // [{ key, label, fader }] in fader order A..D. Only replaced when a fader is assigned
+    // another channel, so the rows in the control center stay put between polls
     property var faders: []
+    // key → { level (0..100), muted }, replaced only when a value changed
+    property var live: ({})
     // Mic mute button on the GoXLR (cough button), separate from the mic fader's mute
     property bool micButtonMuted: false
     // Poll faster while the control center shows the levels; the normal rate keeps the OSD quick enough
     property bool fast: false
 
+    // { key, label, fader, level, muted } or null
     function fader(key) {
-        return faders.find(f => f.key === key) ?? null;
+        const f = faders.find(f => f.key === key);
+        if (!f)
+            return null;
+        const l = live[key] ?? { level: 0, muted: false };
+        return { key: f.key, label: f.label, fader: f.fader, level: l.level, muted: l.muted };
+    }
+
+    function state(key) {
+        return live[key] ?? { level: 0, muted: false };
     }
 
     function request(method, path, body, onDone) {
@@ -67,17 +79,23 @@ Singleton {
         const mixer = data.mixers[id];
         const volumes = mixer.levels?.volumes ?? {};
         const status = mixer.fader_status ?? {};
-        faders = Object.keys(status).sort().map(letter => {
+        const list = [];
+        const next = {};
+        for (const letter of Object.keys(status).sort()) {
             const channel = String(status[letter].channel ?? "");
             const key = ["game", "system"].includes(channel.toLowerCase()) ? "game" : channel.toLowerCase();
-            return {
-                key,
-                label: key === "game" ? "game · sys" : channel.toLowerCase(),
-                fader: letter,
+            list.push({ key, label: key === "game" ? "game · sys" : channel.toLowerCase(), fader: letter });
+            next[key] = {
                 level: Math.round((volumes[channel] ?? 0) / 255 * 100),
                 muted: String(status[letter].mute_state ?? "Unmuted") !== "Unmuted"
             };
-        });
+        }
+        const sameFaders = list.length === faders.length
+            && list.every((f, i) => f.key === faders[i].key && f.fader === faders[i].fader && f.label === faders[i].label);
+        if (!sameFaders)
+            faders = list;
+        if (JSON.stringify(next) !== JSON.stringify(live))
+            live = next;
         micButtonMuted = String(mixer.cough_button?.state ?? "Unmuted") !== "Unmuted";
         serial = id;
         available = true;
@@ -89,7 +107,7 @@ Singleton {
             return;
         const body = JSON.stringify({ Command: [serial, { SetFaderMuteState: [target.fader, muted ? "MutedToAll" : "Unmuted"] }] });
         // Show it right away; the next poll confirms
-        faders = faders.map(f => f.key === key ? Object.assign({}, f, { muted }) : f);
+        live = Object.assign({}, live, { [key]: Object.assign({}, state(key), { muted }) });
         request("POST", "/api/command", body, () => refresh());
     }
 

@@ -11,16 +11,47 @@ import qs.services
 Item {
     id: root
 
-    readonly property var playback: sortActive(Audio.playback)
-    readonly property var recording: sortActive(Audio.recording)
+    // Moving a stream to another channel (or a short pause) drops its link for a moment, so
+    // the order only follows idle changes after they held for a while; new and gone apps
+    // show up at once
+    readonly property var rawPlayback: sortActive(Audio.playback)
+    readonly property var rawRecording: sortActive(Audio.recording)
+    property var playback: []
+    property var recording: []
     readonly property bool compact: Audio.playback.length > 5
-    readonly property int activeCount: Audio.playback.filter(n => !Audio.isIdle(n)).length
-    readonly property int idleCount: Audio.playback.length - activeCount
+    readonly property int activeCount: playback.filter(n => !Audio.isIdle(n)).length
+    readonly property int idleCount: playback.length - activeCount
 
     implicitHeight: column.implicitHeight + 46
 
     function sortActive(list) {
         return list.slice().sort((a, b) => (Audio.isIdle(a) ? 1 : 0) - (Audio.isIdle(b) ? 1 : 0));
+    }
+
+    function sameSet(a, b) {
+        return a.length === b.length && a.every(n => b.includes(n));
+    }
+
+    function sameOrder(a, b) {
+        return sameSet(a, b) && a.every((n, i) => n === b[i]);
+    }
+
+    onRawPlaybackChanged: sameSet(rawPlayback, playback) ? settle.restart() : playback = rawPlayback
+    onRawRecordingChanged: sameSet(rawRecording, recording) ? settle.restart() : recording = rawRecording
+    Component.onCompleted: {
+        playback = rawPlayback;
+        recording = rawRecording;
+    }
+
+    Timer {
+        id: settle
+        interval: 800
+        onTriggered: {
+            if (!root.sameOrder(root.rawPlayback, root.playback))
+                root.playback = root.rawPlayback;
+            if (!root.sameOrder(root.rawRecording, root.recording))
+                root.recording = root.rawRecording;
+        }
     }
 
     // ── Building blocks ──────────────────────────────────────
@@ -37,8 +68,27 @@ Item {
         required property var node
         property var routes: []
         property bool last: false
-        readonly property bool idle: Audio.isIdle(node)
-        readonly property string route: Audio.routeOf(node)
+        // idle and route settle with a delay too: while PipeWire relinks the stream, the
+        // row would otherwise dim and lose its chip for a moment
+        readonly property bool idleNow: Audio.isIdle(node)
+        property bool idle: idleNow
+        readonly property string routeNow: Audio.routeOf(node)
+        property string route: routeNow
+        onIdleNowChanged: idleSettle.restart()
+        onRouteNowChanged: {
+            if (routeNow !== "")
+                route = routeNow;
+            else
+                idleSettle.restart();
+        }
+        Timer {
+            id: idleSettle
+            interval: 800
+            onTriggered: {
+                row.idle = row.idleNow;
+                row.route = row.routeNow;
+            }
+        }
         readonly property real volume: node.audio?.volume ?? 0
         readonly property bool muted: node.audio?.muted ?? false
         readonly property string app: Audio.appName(node)
@@ -46,6 +96,7 @@ Item {
         Layout.fillWidth: true
         implicitHeight: content.implicitHeight + (root.compact ? 12 : 20)
         opacity: idle ? 0.5 : 1
+        Behavior on opacity { NumberAnimation { duration: Theme.anim.fast } }
 
         RowLayout {
             id: content
@@ -118,7 +169,11 @@ Item {
                                 implicitWidth: chipLabel.implicitWidth + (root.compact ? 14 : 18)
                                 implicitHeight: root.compact ? 22 : 26
                                 active: row.route === modelData
-                                onClicked: Audio.move(row.node, modelData)
+                                // Show the new chip at once; PipeWire confirms a moment later
+                                onClicked: {
+                                    row.route = modelData;
+                                    Audio.move(row.node, modelData);
+                                }
 
                                 Label {
                                     id: chipLabel

@@ -6,9 +6,11 @@ import Quickshell.Services.Mpris
 import Quickshell.Wayland
 import qs.components
 import qs.config
+import qs.services
 
 // Popup top left whenever Spotify starts another song: cover, title, artist, album,
 // progress and controls. Hides after six seconds and stays while the mouse is on it.
+// Not for songs skipped from the media card under the bar.
 // No like button: Spotify does not offer liking over MPRIS.
 Scope {
     id: root
@@ -37,6 +39,9 @@ Scope {
         if (!spotify || spotify.trackTitle === "" || key === lastTrack)
             return;
         lastTrack = key;
+        // Skipped from the card under the bar: you are already looking at it
+        if (Spotify.cardOpen)
+            return;
         open = true;
         hideAnimation.restart();
     }
@@ -76,19 +81,21 @@ Scope {
     component Label: Text {
         color: Theme.textDim
         font.family: Theme.font
-        font.pixelSize: 16
+        font.pixelSize: 14
         elide: Text.ElideRight
     }
 
     component Control: TuiButton {
+        id: control
+
         property string glyph
-        implicitWidth: 40
-        implicitHeight: 34
+        implicitWidth: 34
+        implicitHeight: 28
 
         Text {
             anchors.centerIn: parent
-            text: parent.glyph
-            color: parent.hovered ? Theme.text : Theme.secondary
+            text: control.glyph
+            color: control.hovered ? Theme.text : Theme.secondary
             font.family: Theme.iconFont
             font.pixelSize: 16
         }
@@ -114,15 +121,15 @@ Scope {
             top: 66
             left: 14
         }
-        implicitWidth: 560
+        implicitWidth: 420
         implicitHeight: card.height + 16
 
         Item {
             id: card
 
             y: 12
-            width: 560
-            height: layout.implicitHeight + 48
+            width: 420
+            height: layout.implicitHeight + 36
             opacity: root.shown
             transform: Translate { x: -24 * (1 - root.shown) }
 
@@ -146,20 +153,20 @@ Scope {
             GridLayout {
                 id: layout
 
-                anchors { left: parent.left; right: parent.right; top: parent.top; leftMargin: 20; rightMargin: 20; topMargin: 28 }
+                anchors { left: parent.left; right: parent.right; top: parent.top; leftMargin: 16; rightMargin: 16; topMargin: 24 }
                 columns: 2
-                columnSpacing: 20
-                rowSpacing: 18
+                columnSpacing: 14
+                rowSpacing: 10
 
                 Rectangle {
-                    implicitWidth: 112
-                    implicitHeight: 112
+                    implicitWidth: 72
+                    implicitHeight: 72
                     color: Theme.surface2
 
                     Image {
                         anchors.fill: parent
                         source: root.spotify?.trackArtUrl ?? ""
-                        sourceSize: Qt.size(224, 224)
+                        sourceSize: Qt.size(144, 144)
                         fillMode: Image.PreserveAspectCrop
                     }
                 }
@@ -172,7 +179,7 @@ Scope {
                         Layout.fillWidth: true
                         text: root.spotify?.trackTitle ?? ""
                         color: Theme.text
-                        font.pixelSize: 24
+                        font.pixelSize: 17
                         font.weight: Font.Medium
                     }
                     Label {
@@ -184,12 +191,12 @@ Scope {
                         Layout.fillWidth: true
                         text: root.spotify?.trackAlbum ?? ""
                         color: Theme.frame
-                        font.pixelSize: 14
+                        font.pixelSize: 13
                     }
 
                     Row {
-                        Layout.topMargin: 12
-                        spacing: 10
+                        Layout.topMargin: 6
+                        spacing: 6
 
                         Control {
                             glyph: ""
@@ -214,10 +221,10 @@ Scope {
                     spacing: 12
 
                     Label {
-                        Layout.preferredWidth: 48
+                        Layout.preferredWidth: 40
                         text: root.format(root.spotify?.position)
                         color: Theme.muted
-                        font.pixelSize: 14
+                        font.pixelSize: 12
                     }
                     Meter {
                         Layout.fillWidth: true
@@ -226,11 +233,11 @@ Scope {
                         fill: Theme.primary
                     }
                     Label {
-                        Layout.preferredWidth: 48
+                        Layout.preferredWidth: 40
                         horizontalAlignment: Text.AlignRight
                         text: root.format(root.spotify?.length)
                         color: Theme.muted
-                        font.pixelSize: 14
+                        font.pixelSize: 12
                     }
                 }
             }

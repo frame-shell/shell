@@ -351,6 +351,8 @@ Item {
                     color: Theme.muted
                 }
 
+                // The list only changes when a fader gets another channel; level and mute
+                // come from GoXLR.live, so the rows and their animations survive every poll
                 Repeater {
                     model: GoXLR.faders
 
@@ -358,6 +360,7 @@ Item {
                         id: faderRow
 
                         required property var modelData
+                        readonly property var live: GoXLR.state(modelData.key)
                         readonly property var glyphs: ({ mic: "", chat: "", music: "", game: "" })
 
                         Layout.fillWidth: true
@@ -377,26 +380,26 @@ Item {
                         Meter {
                             Layout.fillWidth: true
                             implicitHeight: 6
-                            value: faderRow.modelData.level / 100
-                            fill: faderRow.modelData.muted ? Theme.frame : Theme.secondary
+                            value: faderRow.live.level / 100
+                            fill: faderRow.live.muted ? Theme.frame : Theme.secondary
                         }
                         Label {
                             Layout.preferredWidth: 64
                             horizontalAlignment: Text.AlignRight
-                            text: faderRow.modelData.muted ? "muted" : `${faderRow.modelData.level}%`
-                            color: faderRow.modelData.muted ? Theme.danger : Theme.textDim
+                            text: faderRow.live.muted ? "muted" : `${faderRow.live.level}%`
+                            color: faderRow.live.muted ? Theme.danger : Theme.textDim
                         }
                         TuiButton {
                             implicitWidth: 34
                             implicitHeight: 28
                             accent: Theme.danger
-                            active: faderRow.modelData.muted
-                            onClicked: GoXLR.setMuted(faderRow.modelData.key, !faderRow.modelData.muted)
+                            active: faderRow.live.muted
+                            onClicked: GoXLR.setMuted(faderRow.modelData.key, !faderRow.live.muted)
 
                             Icon {
                                 anchors.centerIn: parent
                                 text: ""
-                                color: faderRow.modelData.muted ? Theme.danger : Theme.muted
+                                color: faderRow.live.muted ? Theme.danger : Theme.muted
                                 font.pixelSize: 16
                             }
                         }

@@ -74,7 +74,9 @@ Scope {
         const seen = Object.keys(lastFaders).length > 0;
         const now = {};
         let changed = null;
-        for (const f of GoXLR.faders) {
+        for (const f of GoXLR.faders.map(s => GoXLR.fader(s.key))) {
+            if (!f)
+                continue;
             now[f.key] = f;
             const before = lastFaders[f.key];
             if (!changed && seen && before && (before.level !== f.level || before.muted !== f.muted))
@@ -90,7 +92,11 @@ Scope {
     Connections {
         target: GoXLR
 
+        // The fader list only changes with the channel assignment; levels and mutes live in GoXLR.live
         function onFadersChanged() {
+            root.checkFaders();
+        }
+        function onLiveChanged() {
             root.checkFaders();
         }
 

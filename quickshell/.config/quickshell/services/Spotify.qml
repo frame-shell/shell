@@ -45,6 +45,8 @@ Singleton {
     property var pending: ({})
 
     readonly property MprisPlayer spotifyPlayer: Mpris.players.values.find(p => p.identity === "Spotify") ?? null
+    // True while the media card under the bar is open: song changes made there need no popup
+    property bool cardOpen: false
     // What the controls act on when Spotify is not there
     readonly property MprisPlayer otherPlayer: {
         const list = Mpris.players.values;
@@ -98,6 +100,8 @@ Singleton {
         });
         if (bridged)
             request({ cmd: "search", query: q }, (ok, data) => {
+                if (ok && data?.debug)
+                    console.warn(`spotify: the client found nothing for "${q}": ${JSON.stringify(data.debug)}`);
                 if (ok)
                     done(true, data.items ?? [], data.source ?? "spotify client");
                 else if (apiReady)
@@ -107,9 +111,27 @@ Singleton {
             });
         else if (apiReady)
             viaHelper();
-        else
-            done(false, "not connected, see docs/spotify.md");
+        else if (spotifyPlayer && !waitedForBridge) {
+            // Spotify runs but its extension has not (re)connected yet; it retries every
+            // few seconds, so give it one moment before giving up
+            waitedForBridge = true;
+            bridgeWait.restart();
+        } else
+            done(false, spotifyPlayer
+                ? "Spotify runs, but the Spicetify extension is not connected (frame install spicetify, then restart Spotify)"
+                : "Spotify is not running");
     }
+
+    property bool waitedForBridge: false
+    Timer {
+        id: bridgeWait
+        interval: 3500
+        onTriggered: {
+            if (root.query !== "")
+                root.runSearch(root.query);
+        }
+    }
+    onBridgedChanged: if (bridged) waitedForBridge = false
 
     // ── Playback ─────────────────────────────────────────────
 

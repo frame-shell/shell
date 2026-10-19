@@ -195,13 +195,14 @@ Scope {
 
                     // Infinite canvas (frame layout canvas): a minimap instead of workspaces
                     CanvasMap {
-                        visible: Canvas.enabled
+                        visible: CanvasLayout.enabled
+                        monitor: window.modelData.name
                         leftPadding: 4
                         rightPadding: 4
                     }
 
                     Row {
-                        visible: !Canvas.enabled
+                        visible: !CanvasLayout.enabled
                         leftPadding: 4
                         rightPadding: 4
                         spacing: 4
@@ -286,6 +287,14 @@ Scope {
 
                         HoverHandler {
                             id: mediaHoverHandler
+                        }
+                        // Scroll on the song: the player's volume, 5 % a notch
+                        WheelHandler {
+                            onWheel: event => {
+                                const p = root.player;
+                                if (p && p.volumeSupported)
+                                    p.volume = Math.max(0, Math.min(1, p.volume + (event.angleDelta.y > 0 ? 0.05 : -0.05)));
+                            }
                         }
                         text: `  ${root.player?.trackTitle ?? ""} · ${root.player?.trackArtist ?? ""}`
                         color: Theme.secondary

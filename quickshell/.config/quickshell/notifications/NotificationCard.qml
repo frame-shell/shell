@@ -139,6 +139,8 @@ Item {
                     model: root.entry.actions
 
                     TuiButton {
+                        id: action
+
                         required property var modelData
                         readonly property color tone: modelData.style === "ok" ? Theme.ok
                             : modelData.style === "no" ? Theme.danger
@@ -150,11 +152,12 @@ Item {
                         border.color: modelData.style !== "" ? tone : hovered ? Theme.primary : Theme.border
                         onClicked: Notifications.invoke(root.entry.uid, modelData.id)
 
+                        // The label's parent is the button's inner item, so go by id
                         Text {
                             id: actionLabel
                             anchors.centerIn: parent
-                            text: parent.modelData.label
-                            color: parent.tone
+                            text: action.modelData.label
+                            color: action.tone
                             font.family: Theme.font
                             font.pixelSize: 13
                         }

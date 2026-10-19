@@ -3,6 +3,7 @@ pragma Singleton
 import QtQuick
 import Quickshell
 import Quickshell.Io
+import Quickshell.Wayland
 
 // Unix socket the Vencord plugin (vencord/plugins/shellBridge) connects to.
 // One JSON object per line in both directions.
@@ -14,13 +15,15 @@ import Quickshell.Io
 //   { type: "call", state: "ringing" | "ended", reason ("accepted" | "declined" | "missed", ended only),
 //     caller, avatar, channelId }
 //   { type: "self", muted, deafened, channel }
-//   { type: "contacts", list: [{ userId, name, username, avatar, channelId }], lastDm }   (answer to list_contacts)
+//   { type: "contacts", list: [{ userId, name, username, avatar, channelId, group, time, last, unread, mentions }], lastDm }
+//     (answer to list_contacts; a group DM has no userId, its channelId is opened or called; time is the
+//     newest message's ms, last { author, content, mine, time } that message, mentions the ping count)
 //   { type: "last_dm", userId, name, channelId, guessed }   (you wrote a DM; guessed: most recent DM, not known)
 //   { type: "sent", ok, to, error }
 // shell → Discord:
 //   { cmd: "accept_call" | "decline_call" | "call_back" | "join_voice" | "open_channel" | "toggle_mute" | "toggle_deafen",
 //     channelId?, guildId? }
-//   { cmd: "list_contacts" } | { cmd: "open_dm" | "call_user", userId } | { cmd: "send_dm", userId, content }
+//   { cmd: "list_contacts" } | { cmd: "open_dm" | "call_user", userId, channelId? } | { cmd: "send_dm", userId, content, channelId? }
 //   | { cmd: "reply_last", content }
 Singleton {
     id: root
@@ -29,12 +32,21 @@ Singleton {
     property var clients: []
     readonly property bool connected: clients.length > 0
 
+    // Vesktop is the focused window (messages show up there, so no popup for them)
+    readonly property bool discordFocused: (ToplevelManager.activeToplevel?.appId ?? "").toLowerCase() === "vesktop"
+
     // For the launcher (d): DMs and friends, and who "d reply" goes to
     property var contacts: []
     property var lastDm: null
 
     function refreshContacts() {
         send({ cmd: "list_contacts" });
+    }
+
+    // Brings the Vesktop window to the front (Hyprland does the focusing, the plugin the
+    // navigation); a Vesktop that is not running gets started
+    function focusWindow() {
+        Quickshell.execDetached(["sh", "-c", "hyprctl dispatch 'hl.dsp.focus({ window = \"class:vesktop\" })' | grep -q ok || vesktop"]);
     }
 
     function send(command) {
@@ -70,20 +82,29 @@ Singleton {
             body: "hung up before you answered",
             image: event.avatar ?? "",
             actions: [{ id: "call", label: "call back", style: "ok" }],
-            onAction: () => root.send({ cmd: "call_back", channelId: event.channelId })
+            onAction: () => {
+                root.send({ cmd: "call_back", channelId: event.channelId });
+                root.focusWindow();
+            }
         });
     }
 
     function handle(event) {
         switch (event.type) {
         case "message":
+            // You are in Discord already: the message is on screen, no popup needed
+            if (root.discordFocused)
+                break;
             Notifications.push({
                 app: "discord",
                 title: event.guild ? `${event.author} · #${event.channel}` : event.author,
                 body: event.content,
                 image: event.avatar ?? "",
                 actions: [{ id: "open", label: "open", style: "" }],
-                onAction: () => root.send({ cmd: "open_channel", channelId: event.channelId, guildId: event.guildId })
+                onAction: () => {
+                    root.send({ cmd: "open_channel", channelId: event.channelId, guildId: event.guildId });
+                    root.focusWindow();
+                }
             });
             break;
         case "voice":

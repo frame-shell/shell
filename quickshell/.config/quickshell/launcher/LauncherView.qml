@@ -12,6 +12,13 @@ Item {
 
     signal closeRequested()
 
+    // Keeps clicks on the panel itself (the picture preview, empty space) from reaching
+    // the click-outside area behind it, which would close the launcher
+    MouseArea {
+        anchors.fill: parent
+        onClicked: input.forceActiveFocus()
+    }
+
     property string query: ""
     property int current: 0
     // Power action waiting for its second Enter
@@ -35,6 +42,12 @@ Item {
 
     Modes {
         id: modes
+    }
+
+    // Opens in a mode, e.g. "; " for the clipboard history (Super+V)
+    function preset(text) {
+        input.text = text;
+        input.cursorPosition = text.length;
     }
 
     function reset() {
@@ -384,6 +397,30 @@ Item {
                     }
 
                     // Longer text: Claude's answer, a clipboard entry
+                    // A picture (clipboard history): shown large, its own size when it fits
+                    Rectangle {
+                        visible: (root.selected?.preview ?? "") !== ""
+                        Layout.fillWidth: true
+                        // A fixed height, so the pane does not jump while a picture loads
+                        Layout.preferredHeight: 300
+                        Layout.bottomMargin: 18
+                        color: Theme.surface
+                        border.width: 1
+                        border.color: Theme.border
+                        clip: true
+
+                        Image {
+                            id: previewImage
+                            anchors.fill: parent
+                            anchors.margins: 1
+                            source: (root.selected?.preview ?? "") !== "" ? `file://${root.selected.preview}` : ""
+                            // Big screenshots are scaled down once on load, not on every paint
+                            sourceSize.width: 1200
+                            fillMode: Image.PreserveAspectFit
+                            asynchronous: true
+                        }
+                    }
+
                     Label {
                         Layout.fillWidth: true
                         Layout.bottomMargin: 18

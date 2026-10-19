@@ -39,6 +39,11 @@ Singleton {
         bodyMarkupSupported: false
 
         onNotification: n => {
+            // Vesktop's own desktop notifications would double the ones ShellBridge sends
+            if (root.discordConnected && /vesktop|discord/i.test(`${n.appName} ${n.desktopEntry}`)) {
+                n.dismiss();
+                return;
+            }
             n.tracked = true;
             const critical = n.urgency === NotificationUrgency.Critical;
             root.push({

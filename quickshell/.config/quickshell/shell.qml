@@ -1,5 +1,7 @@
+import QtQuick
 import Quickshell
 import qs.bar
+import qs.canvas
 import qs.controlcenter
 import qs.hotkeys
 import qs.launcher
@@ -7,10 +9,18 @@ import qs.lockscreen
 import qs.media
 import qs.notifications
 import qs.osd
+import qs.screenshot
+import qs.services
 import qs.wallpapers
 
 // Entry point. Each module is added here as it gets built.
 ShellRoot {
+    // Singletons only come to life when something uses them; the Spotify one must listen
+    // for the Spicetify extension from the start, not from the first "s" in the launcher
+    Scope {
+        Component.onCompleted: Spotify.refresh()
+    }
+
     Lock {
         id: lock
 
@@ -21,6 +31,7 @@ ShellRoot {
             history.hide();
             wallpapers.hide();
             hotkeys.hide();
+            overview.close();
         }
     }
 
@@ -64,14 +75,29 @@ ShellRoot {
 
     SpotifyPopup {}
 
-    // Hold Super for three seconds (hypr/frame/hotkeys.lua); closed while locked
+    // Hold Super for three seconds (hypr/frame/hotkeys.lua); closed while locked or
+    // while Super is busy with the canvas overview
     HotkeyOverlay {
         id: hotkeys
+        hidden: lock.active || overview.open
+    }
+
+    // Infinite canvas: Super+wheel zooms out to every window (frame layout canvas)
+    CanvasOverview {
+        id: overview
         hidden: lock.active
     }
 
+    // Infinite canvas: dragging empty canvas moves the view
+    CanvasDesk {}
+
     // Shows fader, mute, volume and layout changes; never on the lockscreen
     Osd {
+        hidden: lock.active
+    }
+
+    // Print: region or window, Shift+Print: the screen (hypr/frame/shell.lua)
+    Screenshot {
         hidden: lock.active
     }
 }

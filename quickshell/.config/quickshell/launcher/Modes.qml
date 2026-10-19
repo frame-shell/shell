@@ -269,10 +269,19 @@ Item {
 
     // ── d: Discord ───────────────────────────────────────────
 
+    // "now", "5m", "2h", "3d" for the DM list
+    function when(ms) {
+        if (!ms)
+            return "";
+        const minutes = Math.floor((Date.now() - ms) / 60000);
+        return minutes < 1 ? "now" : minutes < 60 ? `${minutes}m` : minutes < 1440 ? `${Math.floor(minutes / 60)}h` : `${Math.floor(minutes / 1440)}d`;
+    }
+
     function findContacts(name) {
         const list = DiscordBridge.contacts;
+        // Plain "d": the chats that moved last (you wrote or someone wrote you), newest first
         if (name === "")
-            return list.slice(0, 20);
+            return list.filter(c => c.channelId && (c.time ?? 0) > 0).slice(0, 20);
         return list
             .map(c => ({ c, match: Apps.fuzzy(c.name, name) ?? Apps.fuzzy(c.username, name) }))
             .filter(x => x.match)
@@ -281,12 +290,22 @@ Item {
     }
 
     function contactRow(c, kind, title, content) {
+        const last = c.last ?? null;
+        const who = last ? (last.mine ? "you" : c.group ? last.author : "") : "";
+        const line = last ? `${who ? `${who}: ` : ""}${last.content}` : "";
+        const pings = c.mentions ?? 0;
+        const status = pings > 0 ? `${pings} ping${pings === 1 ? "" : "s"}` : c.unread ? "new" : "";
+        const activity = c.time ? [["last", line || "–"], ["when", `${when(c.time)}${status ? ` · ${status}` : ""}`]] : [];
         return {
             kind, contact: c, content: content ?? "",
-            title, desc: content ? `“${content}”` : c.username !== "" ? `@${c.username}` : "",
+            title,
+            desc: content ? `“${content}”` : line ? `${status ? `${status} · ` : ""}${line}` : c.username !== "" ? `@${c.username}` : "",
+            body: content ? "" : line,
             category: "discord", glyph: c.name.charAt(0).toUpperCase(), tint: Theme.accent, icon: c.avatar,
-            rows: [["user", c.username !== "" ? `@${c.username}` : c.name], ["dm", c.channelId ? "open" : "none yet"]],
-            keys: kind === "discord-open" ? "enter open dm · shift+enter call" : kind === "discord-call" ? "enter call" : "enter send"
+            rows: (c.group ? [["group", c.username], ["dm", "open"]]
+                : [["user", c.username !== "" ? `@${c.username}` : c.name], ["dm", c.channelId ? "open" : "none yet"]]).concat(activity),
+            keys: kind === "discord-open" ? (c.group ? "enter open group · shift+enter call" : "enter open dm · shift+enter call")
+                : kind === "discord-call" ? "enter call" : "enter send"
         };
     }
 
@@ -577,8 +596,9 @@ Item {
                 kind: "clip", entry: e,
                 title: e.image ? `image · ${e.text}` : lines[0].trim() || "(blank)",
                 desc: e.image ? "picture" : lines.length > 1 ? `${lines.length} lines` : `${e.text.length} characters`,
-                category: e.image ? "image" : "text", glyph: e.image ? "▣" : "¶", tint: Theme.secondary, icon: "",
+                category: e.image ? "image" : "text", glyph: e.image ? "▣" : "¶", tint: Theme.secondary, icon: e.preview,
                 body: e.image ? "" : e.text.slice(0, 700),
+                preview: e.preview,
                 rows: [],
                 keys: "enter copy · shift+enter delete from history"
             };
@@ -664,17 +684,18 @@ Item {
             Spotify.play(r.item.uri, shift && r.item.kind === "track");
             return close;
         case "discord-open":
-            DiscordBridge.send({ cmd: shift ? "call_user" : "open_dm", userId: r.contact.userId });
-            // Vesktop runs once; starting it again brings its window up
-            run(["vesktop"]);
+            // Groups have no user, the channel is what gets opened or called
+            DiscordBridge.send({ cmd: shift ? "call_user" : "open_dm", userId: r.contact.userId, channelId: r.contact.channelId });
+            DiscordBridge.focusWindow();
             return close;
         case "discord-call":
-            DiscordBridge.send({ cmd: "call_user", userId: r.contact.userId });
+            DiscordBridge.send({ cmd: "call_user", userId: r.contact.userId, channelId: r.contact.channelId });
+            DiscordBridge.focusWindow();
             return close;
         case "discord-send":
             if (r.content === "")
                 return stay;
-            DiscordBridge.send({ cmd: "send_dm", userId: r.contact.userId, content: r.content });
+            DiscordBridge.send({ cmd: "send_dm", userId: r.contact.userId, content: r.content, channelId: r.contact.channelId });
             return close;
         case "discord-reply":
             if (r.content === "")

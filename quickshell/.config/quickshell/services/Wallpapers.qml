@@ -61,36 +61,42 @@ Singleton {
     }
 
     function next() {
-        if (proc.running || queue.length === 0)
+        if (proc.running || proc.busy || queue.length === 0)
             return;
         proc.args = queue[0];
         queue = queue.slice(1);
+        proc.busy = true;
         proc.command = [tool].concat(proc.args);
         proc.running = true;
     }
 
+    // The output arrives after the exit signal, so the next command only starts once the
+    // output of this one is read; otherwise a "list" answer would be taken for "state"
     Process {
         id: proc
 
         property var args: []
+        property bool busy: false
 
         stdout: StdioCollector {
             onStreamFinished: {
                 const kind = proc.args[0];
-                if (kind !== "list" && kind !== "state")
-                    return;
-                try {
-                    const data = JSON.parse(this.text);
-                    if (kind === "list") {
-                        root.items = data;
-                        root.loading = false;
-                    } else {
-                        root.settings = data;
+                if (kind === "list" || kind === "state") {
+                    try {
+                        const data = JSON.parse(this.text);
+                        if (kind === "list") {
+                            root.items = Array.isArray(data) ? data : [];
+                            root.loading = false;
+                        } else {
+                            root.settings = data;
+                        }
+                        root.available = true;
+                    } catch (e) {
+                        console.warn(`wallpapers: ${kind}: ${e}`);
                     }
-                    root.available = true;
-                } catch (e) {
-                    console.warn(`wallpapers: ${kind}: ${e}`);
                 }
+                proc.busy = false;
+                Qt.callLater(root.next);
             }
         }
 
@@ -104,7 +110,6 @@ Singleton {
         onExited: code => {
             if (proc.args[0] === "list")
                 root.loading = false;
-            Qt.callLater(root.next);
         }
     }
 
