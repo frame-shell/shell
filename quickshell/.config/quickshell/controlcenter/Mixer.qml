@@ -202,8 +202,11 @@ Item {
                 width: flick.width - (flick.contentHeight > flick.height ? 12 : 0)
                 spacing: 0
 
+                // ScriptModel keeps rows (and a slider being dragged) when PipeWire updates the list
                 Repeater {
-                    model: list.nodes
+                    model: ScriptModel {
+                        values: list.nodes
+                    }
 
                     StreamRow {
                         required property var modelData

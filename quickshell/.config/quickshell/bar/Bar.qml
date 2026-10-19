@@ -18,6 +18,7 @@ Scope {
 
     property bool hidden: false
     signal controlCenterRequested(var screen)
+    signal historyRequested(var screen)
 
     // Keyboard layout from Hyprland, shared by all bars
     property string keymap: ""
@@ -116,6 +117,30 @@ Scope {
             IdleInhibitor {
                 window: window
                 enabled: Toggles.stayAwake && window.modelData === Quickshell.screens[0]
+            }
+
+            // Media card under the song while the mouse is on it (or on the card)
+            property bool mediaWanted: mediaHoverHandler.hovered || mediaHover.hovered
+            onMediaWantedChanged: {
+                if (mediaWanted) {
+                    mediaHover.anchorX = mediaLabel.mapToItem(null, 0, 0).x;
+                    mediaHover.open = true;
+                    mediaClose.stop();
+                } else {
+                    mediaClose.restart();
+                }
+            }
+
+            Timer {
+                id: mediaClose
+                interval: 250
+                onTriggered: mediaHover.open = false
+            }
+
+            MediaHover {
+                id: mediaHover
+                barWindow: window
+                player: root.player
             }
 
             Rectangle {
@@ -218,8 +243,13 @@ Scope {
 
                     Bracket { text: "["; visible: root.player !== null }
                     Label {
+                        id: mediaLabel
                         visible: root.player !== null
                         Layout.maximumWidth: 300
+
+                        HoverHandler {
+                            id: mediaHoverHandler
+                        }
                         text: `  ${root.player?.trackTitle ?? ""} · ${root.player?.trackArtist ?? ""}`
                         color: Theme.secondary
                         elide: Text.ElideRight
@@ -245,6 +275,36 @@ Scope {
                     Bracket { text: "─["; visible: root.keymap !== "" }
                     Muted { text: root.keymap; visible: root.keymap !== "" }
                     Bracket { text: "]"; visible: root.keymap !== "" }
+
+                    // Bell: notifications missed while "silent" was on; click for the history
+                    Bracket { text: "─[" }
+                    Item {
+                        implicitWidth: bellRow.implicitWidth
+                        implicitHeight: bellRow.implicitHeight
+
+                        Row {
+                            id: bellRow
+                            spacing: 6
+                            Text {
+                                text: ""
+                                color: Notifications.missed > 0 ? Theme.warn : Theme.muted
+                                font.family: Theme.iconFont
+                                font.pixelSize: 15
+                                anchors.verticalCenter: parent.verticalCenter
+                            }
+                            Label {
+                                text: Notifications.missed
+                                color: Notifications.missed > 0 ? Theme.warn : Theme.muted
+                            }
+                        }
+
+                        MouseArea {
+                            anchors.fill: parent
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: root.historyRequested(window.modelData)
+                        }
+                    }
+                    Bracket { text: "]" }
 
                     TuiButton {
                         Layout.leftMargin: 14

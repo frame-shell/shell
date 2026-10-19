@@ -6,6 +6,7 @@ import qs.config
 Item {
     id: root
 
+    // Icon theme name ("spotify") or a path/URL to an image; both work
     property string icon
     property string glyph
     property color tint: Theme.primary
@@ -17,7 +18,9 @@ Item {
     Image {
         id: image
         anchors.fill: parent
-        source: root.icon !== "" ? Quickshell.iconPath(root.icon, true) : ""
+        source: root.icon === "" ? ""
+            : /^(\/|file:|https?:|image:)/.test(root.icon) ? (root.icon.startsWith("/") ? `file://${root.icon}` : root.icon)
+            : Quickshell.iconPath(root.icon, true)
         sourceSize: Qt.size(root.size * 2, root.size * 2)
         fillMode: Image.PreserveAspectFit
         visible: status === Image.Ready

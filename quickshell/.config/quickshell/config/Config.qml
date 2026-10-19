@@ -11,6 +11,10 @@ Singleton {
     // Blur strength of the desktop snapshot behind the lockscreen, 0 to 1
     readonly property real lockBlur: 1.0
 
+    // How long a notification stays when the app does not say (ms), and how many show at once
+    readonly property int notificationTimeout: 5000
+    readonly property int notificationsMax: 3
+
     // goxlr-utility HTTP API (fader levels and mutes)
     readonly property string goxlrApi: "http://localhost:14564"
     // App mixer routes → PipeWire device description, as shown by `wpctl status`.
