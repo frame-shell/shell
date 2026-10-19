@@ -3,11 +3,14 @@
 -- adds that line. Descriptions show up in the hotkey overlay (hold Super).
 
 -- Quickshell runs bar, launcher, lockscreen and the rest; hypridle locks after idle
--- time (see hypridle.conf); frame-wallpaper starts the wallpaper picked in the app
+-- time (see hypridle.conf); frame-wallpaper starts the wallpaper picked in the app;
+-- cliphist keeps what you copy for the launcher
 hl.on("hyprland.start", function()
     hl.exec_cmd("qs")
     hl.exec_cmd("hypridle")
     hl.exec_cmd("~/.local/bin/frame-wallpaper apply")
+    -- Clipboard history for the launcher (;)
+    hl.exec_cmd("command -v cliphist >/dev/null && wl-paste --watch cliphist store")
 end)
 
 local function shell(target, action)

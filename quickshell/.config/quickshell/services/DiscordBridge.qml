@@ -14,15 +14,28 @@ import Quickshell.Io
 //   { type: "call", state: "ringing" | "ended", reason ("accepted" | "declined" | "missed", ended only),
 //     caller, avatar, channelId }
 //   { type: "self", muted, deafened, channel }
+//   { type: "contacts", list: [{ userId, name, username, avatar, channelId }], lastDm }   (answer to list_contacts)
+//   { type: "last_dm", userId, name, channelId, guessed }   (you wrote a DM; guessed: most recent DM, not known)
+//   { type: "sent", ok, to, error }
 // shell → Discord:
 //   { cmd: "accept_call" | "decline_call" | "call_back" | "join_voice" | "open_channel" | "toggle_mute" | "toggle_deafen",
 //     channelId?, guildId? }
+//   { cmd: "list_contacts" } | { cmd: "open_dm" | "call_user", userId } | { cmd: "send_dm", userId, content }
+//   | { cmd: "reply_last", content }
 Singleton {
     id: root
 
     readonly property string path: `${Quickshell.env("XDG_RUNTIME_DIR")}/qs-discord.sock`
     property var clients: []
     readonly property bool connected: clients.length > 0
+
+    // For the launcher (d): DMs and friends, and who "d reply" goes to
+    property var contacts: []
+    property var lastDm: null
+
+    function refreshContacts() {
+        send({ cmd: "list_contacts" });
+    }
 
     function send(command) {
         const line = `${JSON.stringify(command)}\n`;
@@ -128,6 +141,24 @@ Singleton {
                 actions: event.deafened ? [{ id: "undeafen", label: "undeafen", style: "" }]
                     : event.muted ? [{ id: "unmute", label: "unmute", style: "" }] : [],
                 onAction: id => root.send({ cmd: id === "undeafen" ? "toggle_deafen" : "toggle_mute" })
+            });
+            break;
+        case "contacts":
+            contacts = event.list ?? [];
+            lastDm = event.lastDm ?? lastDm;
+            break;
+        case "last_dm":
+            lastDm = event;
+            break;
+        case "sent":
+            Notifications.push({
+                app: "discord",
+                kind: "mini",
+                logged: false,
+                timeout: event.ok ? 2500 : 6000,
+                glyph: event.ok ? "✓" : "✕",
+                title: event.ok ? `sent to ${event.to}` : `not sent${event.to ? ` to ${event.to}` : ""}`,
+                body: event.ok ? "" : event.error ?? ""
             });
             break;
         default:

@@ -6,7 +6,7 @@ import qs.config
 import qs.services
 
 // Launcher UI: query line, result list, info pane and mode tabs.
-// Modes by prefix: none = apps, "=" calculator, ">" run in Ghostty, ":" power.
+// The modes themselves (prefixes, rows, what Enter does) live in Modes.qml.
 Item {
     id: root
 
@@ -17,21 +17,25 @@ Item {
     // Power action waiting for its second Enter
     property string armed: ""
 
-    readonly property string mode: ["=", ">", ":"].includes(query.charAt(0)) ? query.charAt(0) : ""
-    readonly property string rest: query.slice(mode === "" ? 0 : 1).trim()
-    readonly property var results: compute(mode, rest, Apps.entries, Apps.usage)
+    readonly property var parsed: modes.parse(query)
+    readonly property string mode: parsed.mode
+    readonly property string rest: parsed.rest
+    readonly property var results: modes.compute(mode, rest)
     readonly property var selected: results.length > 0 ? results[Math.min(current, results.length - 1)] : null
     readonly property int maxRows: 9
+    // Long lists (emoji, files, clipboard) scroll in windows of maxRows
+    readonly property int first: Math.max(0, Math.min(current - maxRows + 1, results.length - maxRows))
 
-    readonly property var powerActions: [
-        { name: "lock", desc: "Lock the screen", glyph: "L", tint: Theme.primary,
-          // Short delay so the snapshot does not catch the closing launcher
-          command: ["sh", "-c", "sleep 0.3; qs ipc call lock lock"] },
-        { name: "logout", desc: "End the Hyprland session", glyph: "O", tint: Theme.frame, command: ["hyprctl", "dispatch", "hl.dsp.exit()"] },
-        { name: "suspend", desc: "Sleep, locks first", glyph: "S", tint: Theme.accent, command: ["systemctl", "suspend"] },
-        { name: "reboot", desc: "Restart the computer", glyph: "R", tint: Theme.warn, command: ["systemctl", "reboot"] },
-        { name: "shutdown", desc: "Power off", glyph: "P", tint: Theme.danger, command: ["systemctl", "poweroff"] }
-    ]
+    // Tab keeps the text, so a new mode also searches what is already typed
+    onModeChanged: {
+        modes.modeEntered(mode);
+        modes.queryChanged(mode, rest);
+    }
+    onRestChanged: modes.queryChanged(mode, rest)
+
+    Modes {
+        id: modes
+    }
 
     function reset() {
         input.text = "";
@@ -40,124 +44,33 @@ Item {
         input.forceActiveFocus();
     }
 
-    function escapeHtml(text) {
-        return String(text).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-    }
-
-    // Name with the matched letters highlighted (StyledText)
-    function markup(text, idx) {
-        let out = "";
-        for (let i = 0; i < text.length; i++) {
-            const c = escapeHtml(text[i]);
-            out += idx.includes(i) ? `<font color="${Theme.secondary}"><b>${c}</b></font>` : c;
-        }
-        return out;
-    }
-
-    function calculate(expr) {
-        const plain = expr.replace(/,/g, ".");
-        if (plain === "" || !/^[\d\s+\-*\/().%^]+$/.test(plain))
-            return null;
-        try {
-            const value = Function(`"use strict"; return (${plain.replace(/\^/g, "**")});`)();
-            return typeof value === "number" && isFinite(value) ? Math.round(value * 1e10) / 1e10 : null;
-        } catch (e) {
-            return null;
-        }
-    }
-
-    // Every result has: kind, title, markup, desc, category, glyph, tint, icon, rows
-    function compute(mode, rest, entries, usage) {
-        if (mode === "=") {
-            const value = calculate(rest);
-            return [{
-                kind: "calc", value,
-                title: rest === "" ? "type a calculation" : value === null ? "not a calculation" : `${rest} = ${value}`,
-                category: "calc", glyph: "=", tint: Theme.primary, icon: "",
-                rows: [["input", rest || "–"], ["enter", "copies the result"]]
-            }];
-        }
-        if (mode === ">") {
-            return [{
-                kind: "run", command: rest,
-                title: rest === "" ? "type a command" : rest,
-                desc: "opens in Ghostty and stays open",
-                category: "run", glyph: ">", tint: Theme.frame, icon: "",
-                rows: [["command", rest || "–"], ["shell", "fish"]]
-            }];
-        }
-        if (mode === ":") {
-            return powerActions
-                .map(p => ({ action: p, match: rest === "" ? { score: 0, idx: [] } : Apps.fuzzy(p.name, rest) }))
-                .filter(x => x.match)
-                .sort((a, b) => b.match.score - a.match.score)
-                .map(({ action, match }) => ({
-                    kind: "power", name: action.name, command: action.command,
-                    title: action.name, markup: markup(action.name, match.idx),
-                    desc: action.desc, category: "power", glyph: action.glyph, tint: action.tint, icon: "",
-                    rows: [["runs", action.command.join(" ")], ["confirm", action.name === "lock" ? "no" : "press enter twice"]]
-                }));
-        }
-        const tints = [Theme.primary, Theme.accent, Theme.secondary, Theme.shadow, Theme.ok];
-        return Apps.search(rest).map(({ entry, idx }) => ({
-            kind: "app", entry,
-            title: entry.name, markup: markup(entry.name, idx),
-            desc: entry.comment || entry.genericName || "",
-            category: Apps.categoryOf(entry),
-            glyph: entry.name.charAt(0).toUpperCase(),
-            tint: tints[entry.name.length % tints.length],
-            icon: entry.icon,
-            rows: [["category", Apps.categoryOf(entry)], ["runs", entry.execString], ["used", `${Apps.uses(entry)} times`]]
-        }));
-    }
-
     function move(step) {
-        const count = Math.min(results.length, maxRows);
+        const count = results.length;
         if (count > 0)
             current = (current + step + count) % count;
         armed = "";
     }
 
-    function cycleMode() {
-        const order = ["", "=", ">", ":"];
-        input.text = order[(order.indexOf(mode) + 1) % order.length] + query.slice(mode === "" ? 0 : 1);
+    function cycleMode(step) {
+        const order = modes.order;
+        const next = order[(order.indexOf(mode) + step + order.length) % order.length];
+        input.text = modes.prefix(next) + rest;
     }
 
-    function setMode(prefix) {
-        input.text = prefix + query.slice(mode === "" ? 0 : 1);
+    function setMode(next) {
+        input.text = modes.prefix(next) + rest;
         input.forceActiveFocus();
     }
 
-    function activate() {
-        const r = selected;
-        if (!r)
+    function activate(shift) {
+        if (!selected)
             return;
-        switch (r.kind) {
-        case "app":
-            Apps.launch(r.entry);
+        const next = modes.activate(selected, shift, armed);
+        armed = next.arm ?? "";
+        if (next.query !== undefined)
+            input.text = next.query;
+        if (next.close)
             closeRequested();
-            break;
-        case "calc":
-            if (r.value !== null) {
-                Quickshell.execDetached(["wl-copy", String(r.value)]);
-                closeRequested();
-            }
-            break;
-        case "run":
-            if (r.command !== "") {
-                Quickshell.execDetached(["ghostty", "-e", "fish", "-c", `${r.command}; exec fish`]);
-                closeRequested();
-            }
-            break;
-        case "power":
-            if (r.name !== "lock" && armed !== r.name) {
-                armed = r.name;
-                return;
-            }
-            Quickshell.execDetached(r.command);
-            closeRequested();
-            break;
-        }
     }
 
     // ── Building blocks ──────────────────────────────────────
@@ -227,7 +140,7 @@ Item {
                     Label {
                         anchors.verticalCenter: parent.verticalCenter
                         visible: input.text === ""
-                        text: "search apps · = calc · > run · : power"
+                        text: "search apps · s spotify · d discord · / files · tab for more"
                         color: Theme.frame
                         font.pixelSize: 26
                     }
@@ -247,14 +160,17 @@ Item {
                             root.move(-1);
                             break;
                         case Qt.Key_Tab:
-                            root.cycleMode();
+                            root.cycleMode(1);
+                            break;
+                        case Qt.Key_Backtab:
+                            root.cycleMode(-1);
                             break;
                         case Qt.Key_Escape:
                             root.closeRequested();
                             break;
                         case Qt.Key_Return:
                         case Qt.Key_Enter:
-                            root.activate();
+                            root.activate((event.modifiers & Qt.ShiftModifier) !== 0);
                             break;
                         default:
                             return;
@@ -272,7 +188,7 @@ Item {
                     Label {
                         id: modeLabel
                         anchors.centerIn: parent
-                        text: ({ "": "apps", "=": "calc", ">": "run", ":": "power" })[root.mode]
+                        text: modes.names[root.mode] ?? "apps"
                         color: Theme.secondary
                         font.pixelSize: Theme.size.small
                     }
@@ -294,7 +210,7 @@ Item {
                     Label {
                         anchors { left: parent.left; top: parent.top; margins: 24 }
                         visible: root.results.length === 0
-                        text: "no matches · try = for calc or > to run a command"
+                        text: "no matches · tab switches the mode"
                         color: Theme.muted
                     }
 
@@ -302,22 +218,24 @@ Item {
                         anchors.fill: parent
                         anchors.topMargin: 14
                         interactive: false
-                        model: root.results.slice(0, root.maxRows)
+                        model: root.results.slice(root.first, root.first + root.maxRows)
 
                         delegate: Item {
                             id: row
 
                             required property var modelData
                             required property int index
-                            readonly property bool active: index === root.current
+                            readonly property int position: root.first + index
+                            readonly property bool active: position === root.current
+                            readonly property bool passive: modelData.kind === "info"
 
                             width: ListView.view.width
                             height: 52
 
                             Rectangle {
                                 anchors.fill: parent
-                                color: row.active ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.16)
-                                    : hover.containsMouse ? Qt.rgba(Theme.secondary.r, Theme.secondary.g, Theme.secondary.b, 0.06)
+                                color: row.active && !row.passive ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.16)
+                                    : hover.containsMouse && !row.passive ? Qt.rgba(Theme.secondary.r, Theme.secondary.g, Theme.secondary.b, 0.06)
                                     : "transparent"
                             }
 
@@ -325,7 +243,7 @@ Item {
                                 width: 3
                                 height: parent.height
                                 color: Theme.primary
-                                visible: row.active
+                                visible: row.active && !row.passive
                             }
 
                             RowLayout {
@@ -340,25 +258,41 @@ Item {
                                     color: Theme.primary
                                     font.family: Theme.font
                                     font.pixelSize: Theme.size.normal
-                                    opacity: row.active ? 1 : 0
+                                    opacity: row.active && !row.passive ? 1 : 0
                                 }
 
                                 AppIcon {
+                                    visible: !row.passive
                                     icon: row.modelData.icon
                                     glyph: row.modelData.glyph
                                     tint: row.modelData.tint
                                 }
 
-                                Label {
+                                ColumnLayout {
                                     Layout.fillWidth: true
-                                    text: row.modelData.markup ?? root.escapeHtml(row.modelData.title)
-                                    textFormat: Text.StyledText
-                                    color: row.active ? Theme.text : Theme.textDim
-                                    elide: Text.ElideRight
+                                    spacing: 0
+
+                                    Label {
+                                        Layout.fillWidth: true
+                                        text: row.modelData.markup ?? modes.escapeHtml(row.modelData.title)
+                                        textFormat: Text.StyledText
+                                        color: row.passive ? Theme.muted : row.active ? Theme.text : Theme.textDim
+                                        elide: Text.ElideRight
+                                    }
+
+                                    // Info rows say what to type; other rows keep their detail for the info pane
+                                    Label {
+                                        Layout.fillWidth: true
+                                        visible: row.passive && (row.modelData.desc ?? "") !== ""
+                                        text: row.modelData.desc ?? ""
+                                        color: Theme.frame
+                                        font.pixelSize: Theme.size.small
+                                        elide: Text.ElideRight
+                                    }
                                 }
 
                                 Label {
-                                    text: row.modelData.category
+                                    text: row.modelData.category ?? ""
                                     color: Theme.frame
                                     font.pixelSize: Theme.size.small
                                 }
@@ -368,14 +302,22 @@ Item {
                                 id: hover
                                 anchors.fill: parent
                                 hoverEnabled: true
-                                cursorShape: Qt.PointingHandCursor
-                                onEntered: root.current = row.index
-                                onClicked: {
-                                    root.current = row.index;
-                                    root.activate();
+                                cursorShape: row.passive ? Qt.ArrowCursor : Qt.PointingHandCursor
+                                onEntered: root.current = row.position
+                                onClicked: mouse => {
+                                    root.current = row.position;
+                                    root.activate((mouse.modifiers & Qt.ShiftModifier) !== 0);
                                 }
                             }
                         }
+                    }
+
+                    Label {
+                        anchors { right: parent.right; bottom: parent.bottom; margins: 14 }
+                        visible: root.results.length > root.maxRows
+                        text: `${root.current + 1} / ${root.results.length}`
+                        color: Theme.frame
+                        font.pixelSize: Theme.size.small
                     }
                 }
 
@@ -387,7 +329,7 @@ Item {
                     Layout.fillHeight: true
                     Layout.margins: 32
                     spacing: 6
-                    visible: root.selected !== null
+                    visible: root.selected !== null && root.selected.kind !== "info"
 
                     RowLayout {
                         visible: root.selected?.kind !== "calc"
@@ -411,6 +353,8 @@ Item {
                                 font.pixelSize: 28
                                 font.weight: Font.Medium
                                 wrapMode: Text.WordWrap
+                                maximumLineCount: 3
+                                elide: Text.ElideRight
                             }
                             Label {
                                 Layout.fillWidth: true
@@ -437,6 +381,18 @@ Item {
                         font.pixelSize: 64
                         font.weight: Font.Light
                         wrapMode: Text.WrapAnywhere
+                    }
+
+                    // Longer text: Claude's answer, a clipboard entry
+                    Label {
+                        Layout.fillWidth: true
+                        Layout.bottomMargin: 18
+                        visible: (root.selected?.body ?? "") !== ""
+                        text: root.selected?.body ?? ""
+                        color: Theme.text
+                        wrapMode: Text.Wrap
+                        maximumLineCount: 9
+                        elide: Text.ElideRight
                     }
 
                     GridLayout {
@@ -472,15 +428,15 @@ Item {
                 Layout.preferredHeight: 56
                 Layout.leftMargin: 26
                 Layout.rightMargin: 26
-                spacing: 8
+                spacing: 4
 
                 Repeater {
-                    model: [["", "apps"], ["=", "= calc"], [">", "> run"], [":", ": power"]]
+                    model: modes.order
 
                     Rectangle {
-                        required property var modelData
-                        readonly property bool on: root.mode === modelData[0]
-                        implicitWidth: tabLabel.implicitWidth + 20
+                        required property string modelData
+                        readonly property bool on: root.mode === modelData
+                        implicitWidth: tabLabel.implicitWidth + 14
                         implicitHeight: tabLabel.implicitHeight + 4
                         color: "transparent"
                         border.width: 1
@@ -489,7 +445,7 @@ Item {
                         Label {
                             id: tabLabel
                             anchors.centerIn: parent
-                            text: parent.modelData[1]
+                            text: parent.modelData === "" ? "apps" : parent.on ? `${parent.modelData} ${modes.names[parent.modelData]}` : parent.modelData
                             color: parent.on ? Theme.secondary : Theme.muted
                             font.pixelSize: Theme.size.small
                         }
@@ -497,7 +453,7 @@ Item {
                         MouseArea {
                             anchors.fill: parent
                             cursorShape: Qt.PointingHandCursor
-                            onClicked: root.setMode(parent.modelData[0])
+                            onClicked: root.setMode(parent.modelData)
                         }
                     }
                 }
@@ -505,9 +461,12 @@ Item {
                 Item { Layout.fillWidth: true }
 
                 Label {
-                    text: root.armed !== "" ? `press enter again to ${root.armed}` : "↑↓ select · enter launch · tab mode · esc close"
+                    text: root.armed !== "" ? `press enter again to ${root.armed}`
+                        : root.selected?.keys ?? "↑↓ select · enter launch · tab mode · esc close"
                     color: root.armed !== "" ? Theme.warn : Theme.frame
                     font.pixelSize: Theme.size.small
+                    elide: Text.ElideLeft
+                    Layout.maximumWidth: 420
                 }
             }
         }

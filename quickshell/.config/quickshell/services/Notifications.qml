@@ -9,7 +9,7 @@ import qs.config
 // and Discord events from the Vencord bridge. Popups are shown by notifications/Popups.qml,
 // everything also lands in `history` for the bell in the bar.
 //
-// Entry: { uid, app, title, body, image, glyph, kind ("normal" | "voice" | "call" | "mini"),
+// Entry: { uid, app, title, body, image, glyph, kind ("normal" | "voice" | "call" | "alarm" | "mini"),
 //   critical, timeout (ms, 0 = stays until handled), time, actions: [{ id, label, style }],
 //   notification (D-Bus object or null), onAction(id), callChannel,
 //   logged (false = popup only, e.g. a missed-call notice whose call is already in the history) }
@@ -61,6 +61,11 @@ Singleton {
         }
     }
 
+    // Ringing calls and alarms (launcher t/a) get through silent and stay on screen
+    function urgent(entry) {
+        return entry.kind === "call" || entry.kind === "alarm";
+    }
+
     function push(entry) {
         const full = Object.assign({
             uid: nextUid++,
@@ -84,18 +89,18 @@ Singleton {
         if (full.logged)
             history = [full].concat(history).slice(0, 50);
 
-        // Silent keeps everything but calls and critical ones off the screen
-        if (Toggles.silent && !full.critical && full.kind !== "call") {
+        // Silent keeps everything but calls, alarms and critical ones off the screen
+        if (Toggles.silent && !full.critical && !root.urgent(full)) {
             missed += 1;
             return;
         }
 
-        // At most three on screen; the oldest non-call goes first
+        // At most three on screen; the oldest that is not a call or alarm goes first
         let list = [full].concat(popups);
         while (list.length > Config.notificationsMax) {
             let drop = -1;
             for (let i = list.length - 1; i >= 0; i--)
-                if (list[i].kind !== "call") {
+                if (!root.urgent(list[i])) {
                     drop = i;
                     break;
                 }

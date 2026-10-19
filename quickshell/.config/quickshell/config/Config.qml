@@ -29,4 +29,34 @@ Singleton {
         "chat mic": "GoXLR Chat Mic",
         sampler: "GoXLR Sampler"
     })
+
+    // ── Launcher ─────────────────────────────────────────────
+
+    // Port the Spicetify extension connects to (s mode). Change it here and as PORT in
+    // spicetify/.config/spicetify/Extensions/frameshell.js, then run `frame update spicetify`.
+    readonly property int spotifyPort: 48931
+
+    // Web search (?): engine without a shortcut, and the shortcuts. %s is the search text.
+    readonly property string searchDefault: "ddg"
+    readonly property var searchEngines: ({
+        g: ["Google", "https://www.google.com/search?q=%s"],
+        ddg: ["DuckDuckGo", "https://duckduckgo.com/?q=%s"],
+        yt: ["YouTube", "https://www.youtube.com/results?search_query=%s"],
+        gh: ["GitHub", "https://github.com/search?q=%s"],
+        aw: ["Arch Wiki", "https://wiki.archlinux.org/index.php?search=%s"],
+        aur: ["AUR", "https://aur.archlinux.org/packages?K=%s"],
+        w: ["Wikipedia", "https://en.wikipedia.org/w/index.php?search=%s"],
+        r: ["Reddit", "https://www.reddit.com/search/?q=%s"]
+    })
+
+    // Claude (c): there when the claude CLI is installed; false hides it. The model is
+    // passed as --model (haiku answers fastest); empty uses your CLI default.
+    readonly property bool claudeEnabled: true
+    readonly property string claudeModel: "haiku"
+
+    // File search (/): folder to search in; empty is your home folder
+    readonly property string fileSearchRoot: ""
+
+    // Timers and alarms (t, a): how long snooze waits, in minutes
+    readonly property int snoozeMinutes: 10
 }
