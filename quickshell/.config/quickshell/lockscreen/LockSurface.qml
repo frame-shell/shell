@@ -457,7 +457,8 @@ Item {
             const keyboards = JSON.parse(text).keyboards ?? [];
             const kb = keyboards.find(k => k.main) ?? keyboards[0];
             if (kb) {
-                keymap = (kb.active_keymap ?? "").toLowerCase();
+                // The layout is only worth a word when there is more than one to switch
+                keymap = String(kb.layout ?? "").includes(",") ? (kb.active_keymap ?? "").toLowerCase() : "";
                 capsLock = !!kb.capsLock;
             }
         } catch (e) {

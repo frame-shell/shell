@@ -22,6 +22,8 @@ Scope {
 
     // Keyboard layout from Hyprland, shared by all bars
     property string keymap: ""
+    // More than one layout in Hyprland's input config; with one the segment stays away
+    property bool multiLayout: false
 
     // Prefer whatever is playing, then Spotify, then any player
     readonly property MprisPlayer player: {
@@ -67,7 +69,9 @@ Scope {
                     const keyboards = JSON.parse(this.text).keyboards ?? [];
                     const real = keyboards.filter(k => !/virtual|wtype|ydotool/i.test(k.name));
                     const kb = real.find(k => k.main) ?? real[0] ?? keyboards[0];
-                    if (kb)
+                    // One layout only: nothing to switch, so nothing to show
+                    root.multiLayout = !!kb && String(kb.layout ?? "").includes(",");
+                    if (kb && root.multiLayout)
                         root.keymap = root.shortLayout(kb.active_keymap ?? "");
                 } catch (e) {}
             }
@@ -82,7 +86,7 @@ Scope {
                 return;
             // Virtual keyboards (wtype, ydotool, remote desktops) carry their own layout
             const [device, layout] = [event.data.slice(0, event.data.lastIndexOf(",")), event.data.split(",").pop()];
-            if (/virtual|wtype|ydotool/i.test(device))
+            if (/virtual|wtype|ydotool/i.test(device) || !root.multiLayout)
                 return;
             root.keymap = root.shortLayout(layout);
         }
