@@ -4,7 +4,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 
-// Front end for ~/.local/bin/roxy-wallpaper (wallpaper package), which owns the state
+// Front end for ~/.local/bin/frame-wallpaper (wallpaper package), which owns the state
 // and starts linux-wallpaperengine, mpvpaper or swaybg.
 //
 // items:    [{ id, title, kind ("scene" | "video" | "web" | "image"), source ("workshop" | "file"),
@@ -15,7 +15,7 @@ Singleton {
     id: root
 
     // Hyprland's environment usually has no ~/.local/bin in PATH
-    readonly property string tool: `${Quickshell.env("HOME")}/.local/bin/roxy-wallpaper`
+    readonly property string tool: `${Quickshell.env("HOME")}/.local/bin/frame-wallpaper`
     property bool available: true
     property bool loading: false
     property var items: []

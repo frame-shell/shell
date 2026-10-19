@@ -28,7 +28,7 @@ Item {
           // Short delay so the snapshot does not catch the closing launcher
           command: ["sh", "-c", "sleep 0.3; qs ipc call lock lock"] },
         { name: "logout", desc: "End the Hyprland session", glyph: "O", tint: Theme.frame, command: ["hyprctl", "dispatch", "exit"] },
-        { name: "suspend", desc: "Sleep, locks first", glyph: "S", tint: Theme.violet, command: ["systemctl", "suspend"] },
+        { name: "suspend", desc: "Sleep, locks first", glyph: "S", tint: Theme.accent, command: ["systemctl", "suspend"] },
         { name: "reboot", desc: "Restart the computer", glyph: "R", tint: Theme.warn, command: ["systemctl", "reboot"] },
         { name: "shutdown", desc: "Power off", glyph: "P", tint: Theme.danger, command: ["systemctl", "poweroff"] }
     ]
@@ -98,7 +98,7 @@ Item {
                     rows: [["runs", action.command.join(" ")], ["confirm", action.name === "lock" ? "no" : "press enter twice"]]
                 }));
         }
-        const tints = [Theme.primary, Theme.violet, Theme.secondary, Theme.shadow, Theme.green];
+        const tints = [Theme.primary, Theme.accent, Theme.secondary, Theme.shadow, Theme.ok];
         return Apps.search(rest).map(({ entry, idx }) => ({
             kind: "app", entry,
             title: entry.name, markup: markup(entry.name, idx),

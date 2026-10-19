@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# roxy-wallpaper – wallpaper backends for the roxy-dots desktop
+# frame-wallpaper – wallpaper backends for the frameshell desktop
 #
 # The Quickshell wallpaper app (Super+W) is only a front end for this script, and Hyprland
-# runs `roxy-wallpaper apply` at login. State: ${XDG_STATE_HOME:-~/.local/state}/roxy-dots/wallpaper.json
+# runs `frame-wallpaper apply` at login. State: ${XDG_STATE_HOME:-~/.local/state}/frameshell/wallpaper.json
 #
-# Backends ("backend" in the state, asked once by `roxy install`):
+# Backends ("backend" in the state, asked once by `frame install`):
 #   both   Wallpaper Engine scenes and videos from the Steam Workshop (linux-wallpaperengine),
 #          plus videos (mpvpaper) and images (swaybg) from the wallpaper folders
 #   mpv    only the wallpaper folders: videos through mpvpaper, images through swaybg
@@ -12,21 +12,21 @@
 # Wallpaper folders: ~/Pictures/wallpapers (or $WALLPAPER_DIR) and assets/wallpapers in the repo.
 #
 # Usage:
-#   roxy-wallpaper list                      JSON list of everything the backend can show
-#   roxy-wallpaper state                     current state as JSON
-#   roxy-wallpaper set <path> [screen]       set a wallpaper on one screen ("*" = all) and apply
-#   roxy-wallpaper option <key> <value>      fps <n> | volume <0-100> | scaling fill|fit | pause true|false
-#   roxy-wallpaper backend [both|mpv|image]  show or change the backend ("engine" means both)
-#   roxy-wallpaper apply                     (re)start the backends from the state
-#   roxy-wallpaper stop
+#   frame-wallpaper list                      JSON list of everything the backend can show
+#   frame-wallpaper state                     current state as JSON
+#   frame-wallpaper set <path> [screen]       set a wallpaper on one screen ("*" = all) and apply
+#   frame-wallpaper option <key> <value>      fps <n> | volume <0-100> | scaling fill|fit | pause true|false
+#   frame-wallpaper backend [both|mpv|image]  show or change the backend ("engine" means both)
+#   frame-wallpaper apply                     (re)start the backends from the state
+#   frame-wallpaper stop
 #
 # Not tested on a real system yet. linux-wallpaperengine flags follow its README.
 set -euo pipefail
 
-STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/roxy-dots"
+STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/frameshell"
 STATE="$STATE_DIR/wallpaper.json"
 LOG="$STATE_DIR/wallpaper.log"
-CACHE="${XDG_CACHE_HOME:-$HOME/.cache}/roxy-dots/wallpapers"
+CACHE="${XDG_CACHE_HOME:-$HOME/.cache}/frameshell/wallpapers"
 WORKSHOP="${WALLPAPER_WORKSHOP:-${XDG_DATA_HOME:-$HOME/.local/share}/Steam/steamapps/workshop/content/431960}"
 # This file is stowed from <repo>/wallpaper/.local/bin, so the repo is three levels up
 REPO="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/../../.." && pwd)"
@@ -34,7 +34,7 @@ FOLDERS=("${WALLPAPER_DIR:-$HOME/Pictures/wallpapers}" "$REPO/assets/wallpapers"
 DEFAULT_STATE='{"backend":"both","fps":30,"volume":0,"scaling":"fill","pause":true,"screens":{}}'
 
 die() {
-    echo "roxy-wallpaper: $*" >&2
+    echo "frame-wallpaper: $*" >&2
     exit 1
 }
 
@@ -161,7 +161,10 @@ spawn() {
 }
 
 background_color() {
-    jq -r '.colors.bg // "#0b0c1f"' "$REPO/themes/roxy.json" 2>/dev/null || echo "#0b0c1f"
+    # The background of the active theme (frame theme set …)
+    local theme
+    theme=$(cat "$STATE_DIR/theme" 2>/dev/null || echo periwinkle)
+    jq -r '.colors.bg // "#0b0c1f"' "$REPO/themes/$theme.json" 2>/dev/null || echo "#0b0c1f"
 }
 
 start_on() {
@@ -210,7 +213,7 @@ cmd_apply() {
 
 cmd_set() {
     local path=${1:-} screen=${2:-*} kind
-    [[ -n $path ]] || die "usage: roxy-wallpaper set <path> [screen]"
+    [[ -n $path ]] || die "usage: frame-wallpaper set <path> [screen]"
     [[ -e $path ]] || die "not found: $path"
     path="$(readlink -f "$path")"
     kind="$(kind_of "$path")"
@@ -255,7 +258,7 @@ cmd_backend() {
         *) die "backend: both (engine), mpv or image" ;;
     esac
     update --arg v "$backend" '.backend = $v'
-    # Only restart when a desktop is running (roxy install sets it before the first login)
+    # Only restart when a desktop is running (frame install sets it before the first login)
     if command -v hyprctl >/dev/null && hyprctl monitors >/dev/null 2>&1; then
         cmd_apply
     fi

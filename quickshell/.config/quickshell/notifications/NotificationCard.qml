@@ -15,12 +15,12 @@ Item {
     readonly property bool isCall: entry.kind === "call"
     readonly property bool mini: entry.kind === "mini"
     readonly property color accent: entry.critical ? Theme.danger
-        : isCall ? Theme.green
-        : entry.kind === "voice" ? Theme.violet
+        : isCall ? Theme.ok
+        : entry.kind === "voice" ? Theme.accent
         : Theme.border
     readonly property color labelColor: entry.critical ? Theme.danger
-        : isCall ? Theme.green
-        : entry.kind === "voice" ? Theme.violet
+        : isCall ? Theme.ok
+        : entry.kind === "voice" ? Theme.accent
         : Theme.muted
 
     // 1 → 0 over the timeout
@@ -72,7 +72,7 @@ Item {
         running: root.isCall
         loops: Animation.Infinite
         ColorAnimation { to: Theme.border; duration: 600; easing.type: Easing.InOutSine }
-        ColorAnimation { to: Theme.green; duration: 600; easing.type: Easing.InOutSine }
+        ColorAnimation { to: Theme.ok; duration: 600; easing.type: Easing.InOutSine }
     }
 
     Rectangle {
@@ -100,7 +100,7 @@ Item {
             size: root.mini ? 30 : 44
             icon: root.entry.image
             glyph: root.entry.glyph
-            tint: root.entry.kind === "voice" ? Theme.violet : root.isCall ? Theme.green : Theme.primary
+            tint: root.entry.kind === "voice" ? Theme.accent : root.isCall ? Theme.ok : Theme.primary
         }
 
         ColumnLayout {
@@ -140,7 +140,7 @@ Item {
 
                     TuiButton {
                         required property var modelData
-                        readonly property color tone: modelData.style === "ok" ? Theme.green
+                        readonly property color tone: modelData.style === "ok" ? Theme.ok
                             : modelData.style === "no" ? Theme.danger
                             : Theme.secondary
 

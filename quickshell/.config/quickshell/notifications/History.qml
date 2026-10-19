@@ -148,7 +148,7 @@ Scope {
                                     size: 30
                                     icon: row.modelData.image
                                     glyph: row.modelData.glyph
-                                    tint: row.modelData.kind === "voice" ? Theme.violet : Theme.primary
+                                    tint: row.modelData.kind === "voice" ? Theme.accent : Theme.primary
                                 }
 
                                 ColumnLayout {

@@ -270,7 +270,7 @@ Item {
                     Label {
                         anchors { left: parent.left; top: parent.top; margins: 24 }
                         visible: root.shown.length === 0
-                        text: !Wallpapers.available ? "the wallpaper package is not installed · run: roxy install wallpaper"
+                        text: !Wallpapers.available ? "the wallpaper package is not installed · run: frame install wallpaper"
                             : Wallpapers.loading ? "looking for wallpapers…"
                             : Wallpapers.items.length === 0 ? "no wallpapers yet · put files in ~/Pictures/wallpapers or subscribe in the workshop"
                             : "no wallpapers match"
@@ -486,7 +486,7 @@ Item {
 
                     Label {
                         Layout.fillWidth: true
-                        text: "←→↑↓ select · enter set · esc close\nroxy-wallpaper backend changes the backend from a terminal\nthe lockscreen blurs a still snapshot"
+                        text: "←→↑↓ select · enter set · esc close\nframe wallpaper backend changes the backend from a terminal\nthe lockscreen blurs a still snapshot"
                         color: Theme.frame
                         font.pixelSize: 12
                         wrapMode: Text.WordWrap
