@@ -11,7 +11,8 @@ import qs.config
 //
 // Entry: { uid, app, title, body, image, glyph, kind ("normal" | "voice" | "call" | "mini"),
 //   critical, timeout (ms, 0 = stays until handled), time, actions: [{ id, label, style }],
-//   notification (D-Bus object or null), onAction(id), callChannel }
+//   notification (D-Bus object or null), onAction(id), callChannel,
+//   logged (false = popup only, e.g. a missed-call notice whose call is already in the history) }
 Singleton {
     id: root
 
@@ -74,12 +75,14 @@ Singleton {
             actions: [],
             notification: null,
             onAction: null,
-            callChannel: ""
+            callChannel: "",
+            logged: true
         }, entry);
         if (!entry.glyph)
             full.glyph = (full.title || full.app).charAt(0).toUpperCase();
 
-        history = [full].concat(history).slice(0, 50);
+        if (full.logged)
+            history = [full].concat(history).slice(0, 50);
 
         // Silent keeps everything but calls and critical ones off the screen
         if (Toggles.silent && !full.critical && full.kind !== "call") {
@@ -126,6 +129,11 @@ Singleton {
 
     function removeWhere(test) {
         popups = popups.filter(p => !test(p));
+    }
+
+    // Rewrites matching history entries, e.g. a ringing call that turned out to be missed
+    function updateHistory(test, changes) {
+        history = history.map(h => test(h) ? Object.assign({}, h, changes) : h);
     }
 
     function markSeen() {

@@ -10,7 +10,9 @@ import qs.config
 // Expected from GET /api/get-devices (goxlr-utility status JSON):
 //   mixers.<serial>.levels.volumes.<Channel>   0..255
 //   mixers.<serial>.fader_status.<A..D>         { channel: "Mic", mute_state: "Unmuted" }
+//   mixers.<serial>.cough_button.state           "Unmuted" | "MutedToX" | "MutedToAll"  (mic mute button)
 // If your goxlr-utility version names things differently, adjust parse() and setMuted().
+// goxlr-utility also has a websocket with live patches; polling keeps this simple.
 Singleton {
     id: root
 
@@ -18,7 +20,9 @@ Singleton {
     property string serial: ""
     // [{ key, label, fader, level (0..100), muted }] in fader order A..D
     property var faders: []
-    // Poll faster while the control center shows the levels
+    // Mic mute button on the GoXLR (cough button), separate from the mic fader's mute
+    property bool micButtonMuted: false
+    // Poll faster while the control center shows the levels; the normal rate keeps the OSD quick enough
     property bool fast: false
 
     function fader(key) {
@@ -74,6 +78,7 @@ Singleton {
                 muted: String(status[letter].mute_state ?? "Unmuted") !== "Unmuted"
             };
         });
+        micButtonMuted = String(mixer.cough_button?.state ?? "Unmuted") !== "Unmuted";
         serial = id;
         available = true;
     }
@@ -89,7 +94,7 @@ Singleton {
     }
 
     Timer {
-        interval: root.fast ? 500 : 5000
+        interval: root.fast ? 300 : 600
         running: true
         repeat: true
         triggeredOnStart: true

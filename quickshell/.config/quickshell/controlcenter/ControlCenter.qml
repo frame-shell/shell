@@ -12,6 +12,7 @@ Scope {
     id: root
 
     signal lockRequested()
+    signal wallpapersRequested()
 
     property bool open: false
     property bool mixerOpen: false
@@ -103,6 +104,10 @@ Scope {
 
                 onMixerToggled: root.mixerOpen = !root.mixerOpen
                 onCloseRequested: root.hide()
+                onWallpapersRequested: {
+                    root.hide();
+                    root.wallpapersRequested();
+                }
                 onLockRequested: {
                     root.hide();
                     lockLater.restart();

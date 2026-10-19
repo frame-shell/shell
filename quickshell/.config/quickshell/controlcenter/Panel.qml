@@ -16,6 +16,7 @@ Item {
     signal mixerToggled()
     signal closeRequested()
     signal lockRequested()
+    signal wallpapersRequested()
 
     // Reboot and shutdown wait for a second click
     property string armed: ""
@@ -249,6 +250,23 @@ Item {
             index: 1
             label: "toggles"
             implicitHeight: toggleGrid.implicitHeight + 36
+
+            // Opens the separate wallpaper app (Super+W)
+            TuiButton {
+                anchors { right: parent.right; top: parent.top; topMargin: -16 - height / 2 }
+                implicitWidth: wallpaperLabel.implicitWidth + 20
+                implicitHeight: 24
+                color: Theme.bg
+                onClicked: root.wallpapersRequested()
+
+                Label {
+                    id: wallpaperLabel
+                    anchors.centerIn: parent
+                    text: "wallpapers ›"
+                    color: Theme.secondary
+                    font.pixelSize: 14
+                }
+            }
 
             GridLayout {
                 id: toggleGrid

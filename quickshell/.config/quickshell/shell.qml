@@ -5,6 +5,8 @@ import qs.launcher
 import qs.lockscreen
 import qs.media
 import qs.notifications
+import qs.osd
+import qs.wallpapers
 
 // Entry point. Each module is added here as it gets built.
 ShellRoot {
@@ -16,6 +18,7 @@ ShellRoot {
             controlCenter.hide();
             launcher.hide();
             history.hide();
+            wallpapers.hide();
         }
     }
 
@@ -34,10 +37,16 @@ ShellRoot {
     ControlCenter {
         id: controlCenter
         onLockRequested: lock.lock()
+        onWallpapersRequested: wallpapers.show()
     }
 
     Launcher {
         id: launcher
+    }
+
+    // Separate wallpaper app (Super+W)
+    WallpaperApp {
+        id: wallpapers
     }
 
     // Popups step aside while a panel on the right is open
@@ -52,4 +61,9 @@ ShellRoot {
     }
 
     SpotifyPopup {}
+
+    // Shows fader, mute, volume and layout changes; never on the lockscreen
+    Osd {
+        hidden: lock.active
+    }
 }

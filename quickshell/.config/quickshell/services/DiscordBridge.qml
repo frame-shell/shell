@@ -11,10 +11,11 @@ import Quickshell.Io
 //   { type: "message", author, channel, guild, content, avatar, channelId, guildId }
 //   { type: "voice", action: "join" | "leave", user, channel, count, avatar, channelId, watched }
 //   { type: "event", name, guild, channel, location, channelId, guildId }
-//   { type: "call", state: "ringing" | "ended", caller, avatar, channelId }
+//   { type: "call", state: "ringing" | "ended", reason ("accepted" | "declined" | "missed", ended only),
+//     caller, avatar, channelId }
 //   { type: "self", muted, deafened, channel }
 // shell → Discord:
-//   { cmd: "accept_call" | "decline_call" | "join_voice" | "open_channel" | "toggle_mute" | "toggle_deafen",
+//   { cmd: "accept_call" | "decline_call" | "call_back" | "join_voice" | "open_channel" | "toggle_mute" | "toggle_deafen",
 //     channelId?, guildId? }
 Singleton {
     id: root
@@ -29,6 +30,35 @@ Singleton {
             client.write(line);
             client.flush();
         }
+    }
+
+    // A ringing call stopped: the card goes away and its history entry says how it ended.
+    // A missed call also gets a short notice with "call back".
+    function callEnded(event) {
+        const caller = event.caller || "someone";
+        Notifications.removeWhere(p => p.callChannel === event.channelId);
+        const texts = {
+            accepted: { title: `call with ${caller}`, body: "answered" },
+            declined: { title: `declined call from ${caller}`, body: "you declined" },
+            missed: { title: `missed call from ${caller}`, body: "hung up before you answered" }
+        };
+        const text = texts[event.reason] ?? texts.missed;
+        Notifications.updateHistory(h => h.kind === "call" && h.callChannel === event.channelId && !h.callEnded,
+            Object.assign({ callEnded: true, actions: [] }, text));
+        if (event.reason === "accepted" || event.reason === "declined")
+            return;
+        Notifications.push({
+            app: "discord · call",
+            kind: "mini",
+            logged: false,
+            timeout: 8000,
+            glyph: "✕",
+            title: `missed call · ${caller}`,
+            body: "hung up before you answered",
+            image: event.avatar ?? "",
+            actions: [{ id: "call", label: "call back", style: "ok" }],
+            onAction: () => root.send({ cmd: "call_back", channelId: event.channelId })
+        });
     }
 
     function handle(event) {
@@ -85,7 +115,7 @@ Singleton {
                     onAction: id => root.send({ cmd: id === "accept" ? "accept_call" : "decline_call", channelId: event.channelId })
                 });
             else
-                Notifications.removeWhere(p => p.callChannel === event.channelId);
+                root.callEnded(event);
             break;
         case "self":
             Notifications.push({

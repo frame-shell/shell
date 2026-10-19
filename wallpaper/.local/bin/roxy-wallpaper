@@ -1,0 +1,273 @@
+#!/usr/bin/env bash
+# roxy-wallpaper – wallpaper backends for the roxy-dots desktop
+#
+# The Quickshell wallpaper app (Super+W) is only a front end for this script, and Hyprland
+# runs `roxy-wallpaper apply` at login. State: ${XDG_STATE_HOME:-~/.local/state}/roxy-dots/wallpaper.json
+#
+# Backends ("backend" in the state, asked once by `roxy install`):
+#   both   Wallpaper Engine scenes and videos from the Steam Workshop (linux-wallpaperengine),
+#          plus videos (mpvpaper) and images (swaybg) from the wallpaper folders
+#   mpv    only the wallpaper folders: videos through mpvpaper, images through swaybg
+#   image  only still images through swaybg, lowest power use
+# Wallpaper folders: ~/Pictures/wallpapers (or $WALLPAPER_DIR) and assets/wallpapers in the repo.
+#
+# Usage:
+#   roxy-wallpaper list                      JSON list of everything the backend can show
+#   roxy-wallpaper state                     current state as JSON
+#   roxy-wallpaper set <path> [screen]       set a wallpaper on one screen ("*" = all) and apply
+#   roxy-wallpaper option <key> <value>      fps <n> | volume <0-100> | scaling fill|fit | pause true|false
+#   roxy-wallpaper backend [both|mpv|image]  show or change the backend ("engine" means both)
+#   roxy-wallpaper apply                     (re)start the backends from the state
+#   roxy-wallpaper stop
+#
+# Not tested on a real system yet. linux-wallpaperengine flags follow its README.
+set -euo pipefail
+
+STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/roxy-dots"
+STATE="$STATE_DIR/wallpaper.json"
+LOG="$STATE_DIR/wallpaper.log"
+CACHE="${XDG_CACHE_HOME:-$HOME/.cache}/roxy-dots/wallpapers"
+WORKSHOP="${WALLPAPER_WORKSHOP:-${XDG_DATA_HOME:-$HOME/.local/share}/Steam/steamapps/workshop/content/431960}"
+# This file is stowed from <repo>/wallpaper/.local/bin, so the repo is three levels up
+REPO="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/../../.." && pwd)"
+FOLDERS=("${WALLPAPER_DIR:-$HOME/Pictures/wallpapers}" "$REPO/assets/wallpapers")
+DEFAULT_STATE='{"backend":"both","fps":30,"volume":0,"scaling":"fill","pause":true,"screens":{}}'
+
+die() {
+    echo "roxy-wallpaper: $*" >&2
+    exit 1
+}
+
+command -v jq >/dev/null || die "needs jq"
+
+# ── State ─────────────────────────────────────────────────────
+
+state() {
+    if [[ -f $STATE ]]; then
+        jq --argjson d "$DEFAULT_STATE" '$d + .' "$STATE"
+    else
+        echo "$DEFAULT_STATE"
+    fi
+}
+
+# Writes stdin to the state file without leaving half-written files behind
+save() {
+    mkdir -p "$STATE_DIR"
+    local tmp
+    tmp="$(mktemp "$STATE_DIR/.wallpaper.XXXXXX")"
+    cat >"$tmp"
+    mv "$tmp" "$STATE"
+}
+
+update() {
+    local next
+    next="$(state | jq "$@")"
+    save <<<"$next"
+}
+
+# ── Wallpapers ────────────────────────────────────────────────
+
+# scene | video | web for Workshop folders, image | video for files, unknown otherwise
+kind_of() {
+    local path=$1
+    if [[ -d $path ]]; then
+        if [[ -f $path/project.json ]]; then
+            jq -r '(.type // "scene") | ascii_downcase' "$path/project.json"
+        else
+            echo unknown
+        fi
+        return
+    fi
+    case "${path,,}" in
+        *.png | *.jpg | *.jpeg | *.webp | *.bmp) echo image ;;
+        *.mp4 | *.webm | *.mkv | *.mov | *.gif | *.avi) echo video ;;
+        *) echo unknown ;;
+    esac
+}
+
+# Can the backend show it? Workshop items are folders and need linux-wallpaperengine
+allowed() {
+    local backend=$1 path=$2 kind=$3
+    case "$backend" in
+        both) [[ $kind == scene || $kind == video || $kind == web || $kind == image ]] ;;
+        mpv) [[ ! -d $path && ($kind == video || $kind == image) ]] ;;
+        image) [[ $kind == image ]] ;;
+        *) return 1 ;;
+    esac
+}
+
+# First frame of a video as a cached JPEG; empty without ffmpeg
+thumbnail() {
+    local file=$1 out
+    out="$CACHE/$(printf '%s' "$file" | md5sum | cut -c1-16).jpg"
+    if [[ ! -f $out ]] && command -v ffmpeg >/dev/null; then
+        mkdir -p "$CACHE"
+        ffmpeg -loglevel error -y -ss 1 -i "$file" -frames:v 1 -vf scale=480:-1 "$out" </dev/null || true
+    fi
+    if [[ -f $out ]]; then echo "$out"; else echo ""; fi
+}
+
+cmd_list() {
+    local backend dir folder file kind preview name
+    backend="$(state | jq -r .backend)"
+    {
+        if [[ $backend == both && -d $WORKSHOP ]]; then
+            for dir in "$WORKSHOP"/*/; do
+                dir="${dir%/}"
+                [[ -f $dir/project.json ]] || continue
+                jq -c --arg path "$dir" --arg id "$(basename "$dir")" '
+                    ((.type // "scene") | ascii_downcase) as $kind
+                    | select($kind == "scene" or $kind == "video" or $kind == "web")
+                    | { id: $id, title: (.title // $id), kind: $kind, source: "workshop",
+                        tags: ((.tags // []) | map(ascii_downcase)), path: $path,
+                        preview: (if .preview then $path + "/" + .preview else "" end) }' \
+                    "$dir/project.json" 2>/dev/null || true
+            done
+        fi
+        for folder in "${FOLDERS[@]}"; do
+            [[ -d $folder ]] || continue
+            while IFS= read -r -d '' file; do
+                kind="$(kind_of "$file")"
+                allowed "$backend" "$file" "$kind" || continue
+                preview="$file"
+                [[ $kind == video ]] && preview="$(thumbnail "$file")"
+                name="$(basename "$file")"
+                jq -nc --arg path "$file" --arg title "${name%.*}" --arg kind "$kind" --arg preview "$preview" \
+                    --arg folder "$(basename "$(dirname "$file")")" \
+                    '{ id: $path, title: $title, kind: $kind, source: "file", tags: [$folder], path: $path, preview: $preview }'
+            done < <(find "$folder" -maxdepth 2 -type f -print0 | sort -z)
+        done
+    } | jq -s 'unique_by(.path)'
+}
+
+# ── Backends ──────────────────────────────────────────────────
+
+monitors() {
+    command -v hyprctl >/dev/null || die "needs a running Hyprland (hyprctl)"
+    hyprctl monitors -j | jq -r '.[].name'
+}
+
+stop_backends() {
+    # The process name is cut to 15 characters, so match the command line instead
+    pkill -f '(^|/)linux-wallpaperengine( |$)' 2>/dev/null || true
+    pkill -x mpvpaper 2>/dev/null || true
+    pkill -x swaybg 2>/dev/null || true
+    sleep 0.2
+}
+
+# Runs a backend in its own session so it outlives this script and the shell
+spawn() {
+    setsid -f "$@" >>"$LOG" 2>&1 </dev/null
+}
+
+background_color() {
+    jq -r '.colors.bg // "#0b0c1f"' "$REPO/themes/roxy.json" 2>/dev/null || echo "#0b0c1f"
+}
+
+start_on() {
+    local monitor=$1 path=$2 kind=$3 settings=$4
+    local fps volume scaling pause
+    fps="$(jq -r .fps <<<"$settings")"
+    volume="$(jq -r .volume <<<"$settings")"
+    scaling="$(jq -r .scaling <<<"$settings")"
+    pause="$(jq -r .pause <<<"$settings")"
+
+    if [[ -d $path ]]; then
+        local args=(--screen-root "$monitor" --bg "$path" --fps "$fps" --scaling "$scaling")
+        if [[ $volume == 0 ]]; then args+=(--silent); else args+=(--volume "$volume"); fi
+        [[ $pause == true ]] || args+=(--no-fullscreen-pause)
+        spawn linux-wallpaperengine "${args[@]}"
+    elif [[ $kind == video ]]; then
+        local opts flags=()
+        opts="loop panscan=$([[ $scaling == fill ]] && echo 1.0 || echo 0.0)"
+        if [[ $volume == 0 ]]; then opts+=" no-audio"; else opts+=" volume=$volume"; fi
+        # -p pauses the video while windows cover it
+        [[ $pause == true ]] && flags+=(-p)
+        spawn mpvpaper "${flags[@]}" -o "$opts" "$monitor" "$path"
+    else
+        spawn swaybg -o "$monitor" -i "$path" -m "$scaling"
+    fi
+}
+
+cmd_apply() {
+    local settings backend monitor entry path kind
+    settings="$(state)"
+    backend="$(jq -r .backend <<<"$settings")"
+    stop_backends
+    for monitor in $(monitors); do
+        # A wallpaper set for this screen wins over the one for all screens
+        entry="$(jq -c --arg m "$monitor" '.screens[$m] // .screens["*"] // {}' <<<"$settings")"
+        path="$(jq -r '.path // ""' <<<"$entry")"
+        kind="$(jq -r '.kind // ""' <<<"$entry")"
+        if [[ -n $path && -e $path ]] && allowed "$backend" "$path" "$kind"; then
+            start_on "$monitor" "$path" "$kind" "$settings"
+        else
+            # Nothing set, the file is gone, or the backend cannot show it: plain background
+            spawn swaybg -o "$monitor" -c "$(background_color)"
+        fi
+    done
+}
+
+cmd_set() {
+    local path=${1:-} screen=${2:-*} kind
+    [[ -n $path ]] || die "usage: roxy-wallpaper set <path> [screen]"
+    [[ -e $path ]] || die "not found: $path"
+    path="$(readlink -f "$path")"
+    kind="$(kind_of "$path")"
+    [[ $kind != unknown ]] || die "not a wallpaper: $path"
+    if [[ $screen == "*" ]]; then
+        update --arg p "$path" --arg k "$kind" '.screens = { "*": { path: $p, kind: $k } }'
+    else
+        update --arg s "$screen" --arg p "$path" --arg k "$kind" '.screens[$s] = { path: $p, kind: $k }'
+    fi
+    cmd_apply
+}
+
+cmd_option() {
+    local key=${1:-} value=${2:-}
+    case "$key" in
+        fps)
+            [[ $value =~ ^[0-9]+$ && $value -ge 1 ]] || die "fps: a number"
+            update --argjson v "$value" '.fps = $v' ;;
+        volume)
+            [[ $value =~ ^[0-9]+$ && $value -le 100 ]] || die "volume: 0 to 100"
+            update --argjson v "$value" '.volume = $v' ;;
+        scaling)
+            [[ $value == fill || $value == fit ]] || die "scaling: fill or fit"
+            update --arg v "$value" '.scaling = $v' ;;
+        pause)
+            [[ $value == true || $value == false ]] || die "pause: true or false"
+            update --argjson v "$value" '.pause = $v' ;;
+        *) die "options: fps, volume, scaling, pause" ;;
+    esac
+    cmd_apply
+}
+
+cmd_backend() {
+    if [[ $# -eq 0 ]]; then
+        state | jq -r .backend
+        return
+    fi
+    local backend=$1
+    [[ $backend == engine ]] && backend=both
+    case "$backend" in
+        both | mpv | image) ;;
+        *) die "backend: both (engine), mpv or image" ;;
+    esac
+    update --arg v "$backend" '.backend = $v'
+    # Only restart when a desktop is running (roxy install sets it before the first login)
+    if command -v hyprctl >/dev/null && hyprctl monitors >/dev/null 2>&1; then
+        cmd_apply
+    fi
+}
+
+case "${1:-}" in
+    list) cmd_list ;;
+    state) state ;;
+    set) shift; cmd_set "$@" ;;
+    option) shift; cmd_option "$@" ;;
+    backend) shift; cmd_backend "$@" ;;
+    apply) cmd_apply ;;
+    stop) stop_backends ;;
+    *) sed -n '2,/^set -euo/p' "$0" | sed '$d; s/^# \{0,1\}//' ;;
+esac

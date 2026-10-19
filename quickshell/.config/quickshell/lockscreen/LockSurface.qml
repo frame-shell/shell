@@ -138,7 +138,7 @@ Item {
         blur: Config.lockBlur * root.progress
         brightness: -0.45 * root.progress
         saturation: 0.15 * root.progress
-        scale: 1 + 0.045 * root.progress
+        scale: 1 + 0.02 * root.progress
     }
 
     // ── Top right: user@host ─────────────────────────────────
