@@ -65,7 +65,8 @@ Scope {
             onStreamFinished: {
                 try {
                     const keyboards = JSON.parse(this.text).keyboards ?? [];
-                    const kb = keyboards.find(k => k.main) ?? keyboards[0];
+                    const real = keyboards.filter(k => !/virtual|wtype|ydotool/i.test(k.name));
+                    const kb = real.find(k => k.main) ?? real[0] ?? keyboards[0];
                     if (kb)
                         root.keymap = root.shortLayout(kb.active_keymap ?? "");
                 } catch (e) {}
@@ -77,8 +78,13 @@ Scope {
         target: Hyprland
         // "activelayout>>keyboard-name,German"
         function onRawEvent(event) {
-            if (event.name === "activelayout")
-                root.keymap = root.shortLayout(event.data.split(",").pop());
+            if (event.name !== "activelayout")
+                return;
+            // Virtual keyboards (wtype, ydotool, remote desktops) carry their own layout
+            const [device, layout] = [event.data.slice(0, event.data.lastIndexOf(",")), event.data.split(",").pop()];
+            if (/virtual|wtype|ydotool/i.test(device))
+                return;
+            root.keymap = root.shortLayout(layout);
         }
     }
 

@@ -37,34 +37,10 @@ take("SUPER + C", shell("controlcenter", "toggle"), { description = "frame shell
 take("SUPER + V", shell("launcher", "clipboard"), { description = "frame shell · clipboard history" })
 take("SUPER + W", shell("wallpapers", "toggle"), { description = "frame shell · wallpapers" })
 take("SUPER + L", shell("lock", "lock"), { description = "frame shell · lock" })
--- Ctrl+Alt+Q types an @ (for a keyboard without a working AltGr). The sign is typed with
--- a virtual keyboard once Ctrl and Alt are up again, otherwise the app would see Ctrl+@.
-local AT_MODIFIERS = { 37, 64, 105, 108 } -- Control_L, Alt_L, Control_R, Alt_R (XKB keycodes)
-local at_timer
-local at_waited = 0
-local function type_at()
-    at_waited = at_waited + 20
-    local held = false
-    for _, code in ipairs(AT_MODIFIERS) do
-        local ok, down = pcall(hl.is_key_down, code)
-        if ok and down then
-            held = true
-        end
-    end
-    if held and at_waited < 1500 then
-        return
-    end
-    at_timer:set_enabled(false)
-    local f = io.open((os.getenv("XDG_RUNTIME_DIR") or "/tmp") .. "/frame-at.log", "a")
-    if f then f:write("typed after " .. at_waited .. " ms, held=" .. tostring(held) .. "\n"); f:close() end
-    hl.exec_cmd("wtype @")
-end
-at_timer = hl.timer(type_at, { timeout = 20, type = "repeat" })
-at_timer:set_enabled(false)
-take("CTRL + ALT + Q", function()
-    at_waited = 0
-    at_timer:set_enabled(true)
-end, { description = "frame shell · type @" })
+-- Ctrl+Alt+Q types an @ (the Windows habit; for a keyboard without a working AltGr).
+-- Hyprland sends AltGr+Q (MOD5) straight to the focused window, so the app sees the
+-- real key and no virtual keyboard shows up as a layout change.
+take("CTRL + ALT + Q", hl.dsp.exec_raw("sendshortcut", "MOD5, q, activewindow"), { description = "frame shell · type @" })
 
 -- Screenshots (the distro binds Print to grim + slurp; the shell has its own picker)
 take("Print", shell("screenshot", "region"), { description = "frame shell · screenshot: region or window" })
