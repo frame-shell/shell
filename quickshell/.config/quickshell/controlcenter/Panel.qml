@@ -436,16 +436,6 @@ Item {
                     }
                     Item { implicitWidth: 34; implicitHeight: 28 }
                 }
-
-                Label {
-                    Layout.fillWidth: true
-                    visible: GoXLR.available
-                    text: GoXLR.systemOnFader ? "levels follow the physical faders · mute works from here"
-                        : "levels follow the faders · system has none, set it here · mute works from here"
-                    color: Theme.frame
-                    font.pixelSize: 13
-                    wrapMode: Text.WordWrap
-                }
             }
         }
 
