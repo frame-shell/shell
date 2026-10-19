@@ -143,6 +143,30 @@ Scope {
                 player: root.player
             }
 
+            // Calendar under the clock, same open/close rules as the media card
+            property bool calendarWanted: clockHoverHandler.hovered || calendarHover.hovered
+            onCalendarWantedChanged: {
+                if (calendarWanted) {
+                    const pos = center.mapToItem(null, 0, 0);
+                    calendarHover.anchorX = pos.x + center.width / 2;
+                    calendarHover.open = true;
+                    calendarClose.stop();
+                } else {
+                    calendarClose.restart();
+                }
+            }
+
+            Timer {
+                id: calendarClose
+                interval: 250
+                onTriggered: calendarHover.open = false
+            }
+
+            CalendarHover {
+                id: calendarHover
+                barWindow: window
+            }
+
             Rectangle {
                 id: frame
 
@@ -225,6 +249,10 @@ Scope {
                     id: center
                     anchors.centerIn: parent
                     spacing: 12
+
+                    HoverHandler {
+                        id: clockHoverHandler
+                    }
 
                     Label {
                         text: Qt.formatTime(clock.date, "hh:mm")
