@@ -144,12 +144,15 @@ Item {
 
     // ── Readability: a bright or busy picture is dimmed more ──
 
-    // The snapshot is read at low resolution once it is there. The blur normally darkens
-    // it by 0.45; the brighter the picture (mean luminance) and the busier (contrast),
-    // the more it is darkened, up to 0.8, so the text stays readable without boxes.
+    // The snapshot is read at low resolution once it is there. The blur darkens it by
+    // 0.45 as always; only a picture so bright that it would still show above `readable`
+    // after that (behind the clock and password, or on average) is darkened further, and
+    // only by the amount that brings it back down to that level, at most to 0.8.
     property real dim: dimBase
     readonly property real dimBase: 0.45
     readonly property real dimMax: 0.8
+    // Luminance (0..1) a blurred picture may have behind light text
+    readonly property real readable: 0.3
 
     Canvas {
         id: probe
@@ -178,22 +181,22 @@ Item {
                 return;
             const ctx = getContext("2d");
             ctx.drawImage(loadedUrl, 0, 0, width, height);
-            const data = ctx.getImageData(0, 0, width, height).data;
-            let sum = 0, sumSq = 0, n = 0;
-            for (let i = 0; i < data.length; i += 4) {
-                const l = (0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2]) / 255;
-                sum += l;
-                sumSq += l * l;
-                n++;
+            function meanOf(x, y, w, h) {
+                const data = ctx.getImageData(x, y, w, h).data;
+                let sum = 0, n = 0;
+                for (let i = 0; i < data.length; i += 4) {
+                    sum += (0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2]) / 255;
+                    n++;
+                }
+                return n === 0 ? 0 : sum / n;
             }
-            if (n === 0)
-                return;
-            const mean = sum / n;
-            const dev = Math.sqrt(Math.max(0, sumSq / n - mean * mean));
-            // A dark, calm picture (mean 0.2, dev 0.1) keeps the base; brightness above
-            // 0.25 and contrast above 0.12 add to it
-            const extra = Math.max(0, mean - 0.25) * 1.2 + Math.max(0, dev - 0.12) * 0.8;
-            root.dim = Math.min(root.dimMax, root.dimBase + extra);
+            // The whole picture and the middle third, where the clock and the password sit
+            const whole = meanOf(0, 0, width, height);
+            const middle = meanOf(Math.floor(width / 3), Math.floor(height / 3), Math.floor(width / 3), Math.floor(height / 3));
+            const bright = Math.max(whole, middle);
+            // What the base dimming leaves: bright - dimBase. Above `readable`, dim exactly
+            // the difference more; otherwise nothing changes
+            root.dim = Math.min(root.dimMax, Math.max(root.dimBase, bright - root.readable));
         }
     }
 
