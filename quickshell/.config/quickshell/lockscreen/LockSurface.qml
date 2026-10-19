@@ -136,41 +136,20 @@ Item {
         blurEnabled: true
         blurMax: 64
         blur: Config.lockBlur * root.progress
-        brightness: -0.45 * root.progress
+        brightness: -root.dim * root.progress
+        Behavior on brightness { NumberAnimation { duration: Theme.anim.normal } }
         saturation: 0.15 * root.progress
         scale: 1 + 0.02 * root.progress
     }
 
-    // ── Readability: a backdrop where the picture behind is bright or busy ──
+    // ── Readability: a bright or busy picture is dimmed more ──
 
-    // The snapshot is read at low resolution once it is there; each panel's region is
-    // judged by mean luminance and contrast, and a panel on a bright or busy spot gets
-    // the theme background behind it. Everything else keeps the plain blur.
-    property var backdrops: ({})
-    readonly property real backdropOpacity: 0.72
-    // Mean luminance (0..1) above this, or contrast (standard deviation) above that
-    readonly property real brightLimit: 0.55
-    readonly property real busyLimit: 0.2
-
-    function needsBackdrop(name) {
-        return backdrops[name] === true;
-    }
-
-    // Theme background behind a plain item (not a Frame), a little larger than it
-    component Backdrop: Rectangle {
-        property Item target
-        property string name
-        property real stageStart: 0
-        property int margin: 12
-        x: target.x - margin
-        y: target.y - margin
-        width: target.width + 2 * margin
-        height: target.height + 2 * margin
-        visible: target.visible
-        color: Theme.bg
-        opacity: root.needsBackdrop(name) ? root.backdropOpacity * root.stage(stageStart) : 0
-        Behavior on opacity { NumberAnimation { duration: Theme.anim.normal } }
-    }
+    // The snapshot is read at low resolution once it is there. The blur normally darkens
+    // it by 0.45; the brighter the picture (mean luminance) and the busier (contrast),
+    // the more it is darkened, up to 0.8, so the text stays readable without boxes.
+    property real dim: dimBase
+    readonly property real dimBase: 0.45
+    readonly property real dimMax: 0.8
 
     Canvas {
         id: probe
@@ -195,35 +174,26 @@ Item {
         onImageLoaded: requestPaint()
 
         onPaint: {
-            if (loadedUrl === "" || !isImageLoaded(loadedUrl) || root.width === 0)
+            if (loadedUrl === "" || !isImageLoaded(loadedUrl))
                 return;
             const ctx = getContext("2d");
             ctx.drawImage(loadedUrl, 0, 0, width, height);
-            const regions = { host: hostLabel, center: centerColumn, weather: weatherFrame, media: mediaFrame, keys: keyRow };
-            const out = {};
-            for (const name in regions) {
-                const item = regions[name];
-                if (!item || item.width <= 0 || item.height <= 0)
-                    continue;
-                const sx = Math.max(0, Math.floor(item.x / root.width * width));
-                const sy = Math.max(0, Math.floor(item.y / root.height * height));
-                const sw = Math.max(1, Math.min(width - sx, Math.ceil(item.width / root.width * width)));
-                const sh = Math.max(1, Math.min(height - sy, Math.ceil(item.height / root.height * height)));
-                const data = ctx.getImageData(sx, sy, sw, sh).data;
-                let sum = 0, sumSq = 0, n = 0;
-                for (let i = 0; i < data.length; i += 4) {
-                    const l = (0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2]) / 255;
-                    sum += l;
-                    sumSq += l * l;
-                    n++;
-                }
-                if (n === 0)
-                    continue;
-                const mean = sum / n;
-                const dev = Math.sqrt(Math.max(0, sumSq / n - mean * mean));
-                out[name] = mean > root.brightLimit || dev > root.busyLimit;
+            const data = ctx.getImageData(0, 0, width, height).data;
+            let sum = 0, sumSq = 0, n = 0;
+            for (let i = 0; i < data.length; i += 4) {
+                const l = (0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2]) / 255;
+                sum += l;
+                sumSq += l * l;
+                n++;
             }
-            root.backdrops = out;
+            if (n === 0)
+                return;
+            const mean = sum / n;
+            const dev = Math.sqrt(Math.max(0, sumSq / n - mean * mean));
+            // A dark, calm picture (mean 0.2, dev 0.1) keeps the base; brightness above
+            // 0.25 and contrast above 0.12 add to it
+            const extra = Math.max(0, mean - 0.25) * 1.2 + Math.max(0, dev - 0.12) * 0.8;
+            root.dim = Math.min(root.dimMax, root.dimBase + extra);
         }
     }
 
@@ -243,7 +213,6 @@ Item {
         blockLoading: true
     }
 
-    Backdrop { target: hostLabel; name: "host"; stageStart: 0.45 }
     Label {
         id: hostLabel
         visible: root.showLogin
@@ -261,7 +230,6 @@ Item {
         precision: SystemClock.Minutes
     }
 
-    Backdrop { target: centerColumn; name: "center"; stageStart: 0.15; margin: 36 }
     ColumnLayout {
         id: centerColumn
         visible: root.showLogin
@@ -382,8 +350,6 @@ Item {
 
     Frame {
         id: weatherFrame
-        fill: Theme.bg
-        fillOpacity: root.needsBackdrop("weather") ? root.backdropOpacity : 0
         anchors { right: parent.right; rightMargin: 80; verticalCenter: parent.verticalCenter }
         width: 380
         height: weatherColumn.implicitHeight + padding * 2
@@ -486,8 +452,6 @@ Item {
 
     Frame {
         id: mediaFrame
-        fill: Theme.bg
-        fillOpacity: root.needsBackdrop("media") ? root.backdropOpacity : 0
         anchors { left: parent.left; bottom: parent.bottom; leftMargin: 80; bottomMargin: 70 }
         width: 440
         height: 110
@@ -581,7 +545,6 @@ Item {
         onTriggered: devices.running = true
     }
 
-    Backdrop { target: keyRow; name: "keys"; stageStart: 0.45 }
     Row {
         id: keyRow
         visible: root.showLogin

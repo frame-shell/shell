@@ -175,6 +175,7 @@ Scope {
     function show() {
         if (hidden || open || !CanvasLayout.enabled)
             return;
+        area.pressSeen = false;
         const screen = focusedScreen();
         window.screen = screen;
         screenName = screen?.name ?? "";
@@ -587,6 +588,9 @@ Scope {
             property bool movingWindow: false
             property bool resizingWindow: false
             property var pressedWindow: null
+            // Opened while a Hyprland window drag was going on (Super+drag, then the wheel):
+            // the button's release reaches the overlay without a press and must not count
+            property bool pressSeen: false
             property real pressX: 0
             property real pressY: 0
             property real startCx: 0
@@ -596,6 +600,7 @@ Scope {
             property real grabY: 0
 
             onPressed: mouse => {
+                pressSeen = true;
                 pressX = mouse.x;
                 pressY = mouse.y;
                 startCx = root.cx;
@@ -643,6 +648,9 @@ Scope {
                 }
             }
             onReleased: mouse => {
+                if (!pressSeen)
+                    return;
+                pressSeen = false;
                 if (resizingWindow) {
                     resizingWindow = false;
                     pressedWindow = null;
