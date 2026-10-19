@@ -1,0 +1,267 @@
+import QtQuick
+import QtQuick.Layouts
+import Quickshell
+import Quickshell.Hyprland
+import Quickshell.Io
+import Quickshell.Services.Mpris
+import Quickshell.Services.Pipewire
+import Quickshell.Wayland
+import qs.components
+import qs.config
+import qs.services
+
+// Top bar on every screen. Segments read like the prompt:
+//   [1 2 3 4 5]─[window title]        09:41  mon 19 oct        [♪ track]─[cpu 12% 48°]─[ram 6.2G]─[vol 62%]─[de] ⚙
+// The bar flies up while the lockscreen takes over (`hidden`) and drops back in after unlock.
+Scope {
+    id: root
+
+    property bool hidden: false
+    signal controlCenterRequested(var screen)
+
+    // Keyboard layout from Hyprland, shared by all bars
+    property string keymap: ""
+
+    // Prefer whatever is playing, then Spotify, then any player
+    readonly property MprisPlayer player: {
+        const list = Mpris.players.values;
+        return list.find(p => p.isPlaying) ?? list.find(p => p.identity === "Spotify") ?? null;
+    }
+
+    readonly property string volumeText: {
+        const game = GoXLR.fader("game");
+        if (game)
+            return game.muted ? "muted" : `${game.level}%`;
+        const sink = Pipewire.defaultAudioSink;
+        return sink?.audio ? (sink.audio.muted ? "muted" : `${Math.round(sink.audio.volume * 100)}%`) : "–";
+    }
+
+    function shortLayout(name) {
+        const known = { german: "de", english: "en", french: "fr", spanish: "es", italian: "it" };
+        const first = String(name).toLowerCase().split(/[\s(]/)[0];
+        return known[first] ?? first.slice(0, 2);
+    }
+
+    Process {
+        running: true
+        command: ["hyprctl", "devices", "-j"]
+        stdout: StdioCollector {
+            onStreamFinished: {
+                try {
+                    const keyboards = JSON.parse(this.text).keyboards ?? [];
+                    const kb = keyboards.find(k => k.main) ?? keyboards[0];
+                    if (kb)
+                        root.keymap = root.shortLayout(kb.active_keymap ?? "");
+                } catch (e) {}
+            }
+        }
+    }
+
+    Connections {
+        target: Hyprland
+        // "activelayout>>keyboard-name,German"
+        function onRawEvent(event) {
+            if (event.name === "activelayout")
+                root.keymap = root.shortLayout(event.data.split(",").pop());
+        }
+    }
+
+    PwObjectTracker {
+        objects: Pipewire.defaultAudioSink ? [Pipewire.defaultAudioSink] : []
+    }
+
+    SystemClock {
+        id: clock
+        precision: SystemClock.Minutes
+    }
+
+    // ── Pieces ───────────────────────────────────────────────
+
+    component Label: Text {
+        color: Theme.textDim
+        font.family: Theme.font
+        font.pixelSize: 16
+    }
+
+    component Muted: Label {
+        color: Theme.muted
+    }
+
+    // "[", "]─[" and "]" in frame color
+    component Bracket: Label {
+        color: Theme.frame
+    }
+
+    Variants {
+        model: Quickshell.screens
+
+        PanelWindow {
+            id: window
+
+            required property ShellScreen modelData
+            readonly property HyprlandMonitor monitor: Hyprland.monitorFor(modelData)
+
+            screen: modelData
+            color: "transparent"
+            implicitHeight: 64
+            exclusiveZone: 64
+            WlrLayershell.namespace: "qs-bar"
+            anchors {
+                top: true
+                left: true
+                right: true
+            }
+
+            // Stay awake: one inhibitor is enough, keep it on the first screen
+            IdleInhibitor {
+                window: window
+                enabled: Toggles.stayAwake && window.modelData === Quickshell.screens[0]
+            }
+
+            Rectangle {
+                id: frame
+
+                x: 14
+                width: parent.width - 28
+                height: 52
+                y: root.hidden ? -height - 24 : 12
+                color: Qt.rgba(Theme.bg.r, Theme.bg.g, Theme.bg.b, 0.88)
+                border.width: 1
+                border.color: Theme.border
+
+                Behavior on y {
+                    NumberAnimation {
+                        duration: root.hidden ? 380 : 520
+                        easing.type: root.hidden ? Easing.InCubic : Easing.OutBack
+                    }
+                }
+
+                // Left: workspaces and window title
+                RowLayout {
+                    anchors { left: parent.left; leftMargin: 18; verticalCenter: parent.verticalCenter }
+                    width: Math.min(implicitWidth, parent.width / 2 - center.width / 2 - 40)
+                    spacing: 0
+
+                    Bracket { text: "[" }
+
+                    Row {
+                        leftPadding: 4
+                        rightPadding: 4
+                        spacing: 4
+
+                        Repeater {
+                            // 1–5 always, higher ones while they exist
+                            model: {
+                                const ids = [1, 2, 3, 4, 5];
+                                for (const ws of Hyprland.workspaces.values)
+                                    if (ws.id > 5 && !ids.includes(ws.id))
+                                        ids.push(ws.id);
+                                return ids.sort((a, b) => a - b);
+                            }
+
+                            Rectangle {
+                                required property int modelData
+                                readonly property bool active: window.monitor?.activeWorkspace?.id === modelData
+
+                                implicitWidth: wsLabel.implicitWidth + 16
+                                implicitHeight: wsLabel.implicitHeight
+                                color: active ? Theme.primary : "transparent"
+
+                                Label {
+                                    id: wsLabel
+                                    anchors.centerIn: parent
+                                    text: parent.modelData
+                                    color: parent.active ? Theme.bg : Theme.muted
+                                }
+
+                                MouseArea {
+                                    anchors.fill: parent
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: Hyprland.dispatch(`workspace ${parent.modelData}`)
+                                }
+                            }
+                        }
+                    }
+
+                    Bracket { text: "]─[" }
+
+                    Muted {
+                        Layout.fillWidth: true
+                        Layout.maximumWidth: 640
+                        text: ToplevelManager.activeToplevel?.title ?? "desktop"
+                        elide: Text.ElideRight
+                    }
+
+                    Bracket { text: "]" }
+                }
+
+                // Center: clock and date
+                Row {
+                    id: center
+                    anchors.centerIn: parent
+                    spacing: 12
+
+                    Label {
+                        text: Qt.formatTime(clock.date, "hh:mm")
+                        color: Theme.text
+                    }
+
+                    Muted {
+                        text: clock.date.toLocaleDateString(Qt.locale("en_GB"), "ddd d MMM").toLowerCase()
+                    }
+                }
+
+                // Right: media, stats, volume, layout, control center button
+                RowLayout {
+                    anchors { right: parent.right; rightMargin: 10; verticalCenter: parent.verticalCenter }
+                    spacing: 0
+
+                    Bracket { text: "["; visible: root.player !== null }
+                    Label {
+                        visible: root.player !== null
+                        Layout.maximumWidth: 300
+                        text: `  ${root.player?.trackTitle ?? ""} · ${root.player?.trackArtist ?? ""}`
+                        color: Theme.secondary
+                        elide: Text.ElideRight
+                    }
+                    Bracket { text: "]─"; visible: root.player !== null }
+
+                    Bracket { text: "[" }
+                    Muted { text: "cpu " }
+                    Label { text: `${Math.round(SystemStats.cpu)}%` }
+                    Label {
+                        text: ` ${Math.round(SystemStats.cpuTemp)}°`
+                        color: SystemStats.cpuTemp > 75 ? Theme.warn : Theme.muted
+                        visible: SystemStats.cpuTemp > 0
+                    }
+                    Bracket { text: "]─[" }
+                    Muted { text: "ram " }
+                    Label { text: `${SystemStats.memUsed.toFixed(1)}G` }
+                    Bracket { text: "]─[" }
+                    Muted { text: " " ; font.family: Theme.iconFont }
+                    Label { text: root.volumeText }
+                    Bracket { text: "]" }
+
+                    Bracket { text: "─["; visible: root.keymap !== "" }
+                    Muted { text: root.keymap; visible: root.keymap !== "" }
+                    Bracket { text: "]"; visible: root.keymap !== "" }
+
+                    TuiButton {
+                        Layout.leftMargin: 14
+                        implicitWidth: 38
+                        implicitHeight: 34
+                        onClicked: root.controlCenterRequested(window.modelData)
+
+                        Text {
+                            anchors.centerIn: parent
+                            text: ""
+                            color: Theme.secondary
+                            font.family: Theme.iconFont
+                            font.pixelSize: 17
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

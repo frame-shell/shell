@@ -168,39 +168,6 @@ Item {
         font.pixelSize: Theme.size.normal
     }
 
-    // App icon from the icon theme, or a letter tile when there is none
-    component AppIcon: Item {
-        property string icon
-        property string glyph
-        property color tint: Theme.primary
-        property int size: 40
-        implicitWidth: size
-        implicitHeight: size
-
-        Image {
-            id: image
-            anchors.fill: parent
-            source: parent.icon !== "" ? Quickshell.iconPath(parent.icon, true) : ""
-            sourceSize: Qt.size(parent.size * 2, parent.size * 2)
-            fillMode: Image.PreserveAspectFit
-            visible: status === Image.Ready
-        }
-
-        Rectangle {
-            anchors.fill: parent
-            visible: image.status !== Image.Ready
-            color: parent.tint
-            Text {
-                anchors.centerIn: parent
-                text: parent.parent.glyph
-                color: Theme.bg
-                font.family: Theme.font
-                font.pixelSize: parent.parent.size * 0.45
-                font.weight: Font.Medium
-            }
-        }
-    }
-
     component Divider: Rectangle {
         color: Theme.border
         implicitWidth: 1

@@ -7,7 +7,7 @@ import qs.config
 // Session lock with a blurred snapshot of the desktop behind it.
 //
 // `qs ipc call lock lock` (Super+L, hypridle) runs:
-//   1. aboutToLock(), so other modules (the bar) can play their exit animation
+//   1. aboutToLock() and `active`, so the bar and open panels leave the screen (400 ms)
 //   2. a ScreencopyView snapshot of every screen, saved to $XDG_RUNTIME_DIR
 //   3. the real session lock; each LockSurface blurs its snapshot in
 // Unlocking plays the surface animation backwards, then releases the lock.
@@ -24,15 +24,31 @@ Scope {
         return `${Quickshell.env("XDG_RUNTIME_DIR")}/qs-lock-${screen?.name ?? "screen"}.png`;
     }
 
+    // True from Super+L until the session is unlocked again; the bar hides meanwhile
+    property bool hidingForLock: false
+    readonly property bool active: hidingForLock || capturing || sessionLock.locked
+
     function lock() {
-        if (sessionLock.locked || capturing)
+        if (active)
             return;
         context.reset();
+        hidingForLock = true;
         root.aboutToLock();
+        // Give the bar and open panels time to leave before the snapshot
+        exitDelay.restart();
+    }
+
+    function capture() {
         pendingSnapshots = Quickshell.screens.length;
         capturing = true;
         // Lock anyway if a snapshot never arrives
         fallback.restart();
+    }
+
+    Timer {
+        id: exitDelay
+        interval: 400
+        onTriggered: root.capture()
     }
 
     function snapshotDone() {
@@ -71,6 +87,7 @@ Scope {
         onTriggered: {
             sessionLock.locked = false;
             context.reset();
+            root.hidingForLock = false;
         }
     }
 
