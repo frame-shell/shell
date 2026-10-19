@@ -406,9 +406,41 @@ Item {
                     }
                 }
 
+                // System has no fader on a Mini: a slider instead
+                RowLayout {
+                    visible: GoXLR.available && !GoXLR.systemOnFader && GoXLR.volumes.system !== undefined
+                    Layout.fillWidth: true
+                    spacing: 12
+
+                    Icon {
+                        Layout.preferredWidth: 22
+                        text: String.fromCodePoint(0xF057E)
+                        color: Theme.muted
+                        font.pixelSize: 16
+                    }
+                    Label {
+                        Layout.preferredWidth: 104
+                        text: "system"
+                        color: Theme.muted
+                    }
+                    TuiSlider {
+                        Layout.fillWidth: true
+                        value: (GoXLR.volumes.system ?? 0) / 100
+                        onMoved: value => GoXLR.setChannelVolume("System", value * 100)
+                    }
+                    Label {
+                        Layout.preferredWidth: 64
+                        horizontalAlignment: Text.AlignRight
+                        text: `${GoXLR.volumes.system ?? 0}%`
+                        color: Theme.textDim
+                    }
+                    Item { implicitWidth: 34; implicitHeight: 28 }
+                }
+
                 Label {
                     visible: GoXLR.available
-                    text: "levels follow the physical faders · mute works from here"
+                    text: GoXLR.systemOnFader ? "levels follow the physical faders · mute works from here"
+                        : "levels follow the physical faders · system has no fader, set it here · mute works from here"
                     color: Theme.frame
                     font.pixelSize: 13
                 }

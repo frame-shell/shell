@@ -29,12 +29,27 @@ Scope {
         return list.find(p => p.isPlaying) ?? list.find(p => p.identity === "Spotify") ?? null;
     }
 
+    // The GoXLR System channel (what the desktop plays through), else the default sink
     readonly property string volumeText: {
-        const game = GoXLR.fader("game");
-        if (game)
-            return game.muted ? "muted" : `${game.level}%`;
+        if (GoXLR.available && GoXLR.volumes.system !== undefined) {
+            const fader = GoXLR.faders.find(f => f.channel === "system");
+            if (fader && GoXLR.state(fader.key).muted)
+                return "muted";
+            return `${GoXLR.volumes.system}%`;
+        }
         const sink = Pipewire.defaultAudioSink;
         return sink?.audio ? (sink.audio.muted ? "muted" : `${Math.round(sink.audio.volume * 100)}%`) : "–";
+    }
+
+    // Scrolling on the volume: 5 % a notch, GoXLR System or the default sink
+    function stepVolume(up) {
+        if (GoXLR.available && GoXLR.volumes.system !== undefined) {
+            GoXLR.stepSystem(up ? 5 : -5);
+            return;
+        }
+        const sink = Pipewire.defaultAudioSink;
+        if (sink?.audio)
+            sink.audio.volume = Math.max(0, Math.min(1, sink.audio.volume + (up ? 0.05 : -0.05)));
     }
 
     function shortLayout(name) {
@@ -315,7 +330,12 @@ Scope {
                     Label { text: `${SystemStats.memUsed.toFixed(1)}G` }
                     Bracket { text: "]─[" }
                     Muted { text: " " ; font.family: Theme.iconFont }
-                    Label { text: root.volumeText }
+                    Label {
+                        text: root.volumeText
+                        WheelHandler {
+                            onWheel: event => root.stepVolume(event.angleDelta.y > 0)
+                        }
+                    }
                     Bracket { text: "]" }
 
                     Bracket { text: "─["; visible: root.keymap !== "" }

@@ -89,8 +89,23 @@ Scope {
                 changed.level / 100, changed.muted ? "muted" : `${changed.level}%`, changed.muted);
     }
 
+    // The System channel has no fader on a Mini; the bar and the control center set it
+    property int lastSystem: -1
+    function checkSystem() {
+        const level = GoXLR.volumes.system;
+        if (level === undefined)
+            return;
+        if (lastSystem >= 0 && level !== lastSystem && !GoXLR.systemOnFader)
+            show("goxlr · system", glyph(0xF057E), level / 100, `${level}%`, false);
+        lastSystem = level;
+    }
+
     Connections {
         target: GoXLR
+
+        function onVolumesChanged() {
+            root.checkSystem();
+        }
 
         // The fader list only changes with the channel assignment; levels and mutes live in GoXLR.live
         function onFadersChanged() {

@@ -23,6 +23,11 @@ Singleton {
     property var faders: []
     // key → { level (0..100), muted }, replaced only when a value changed
     property var live: ({})
+    // Every channel's volume, lowercase name → 0..100 (system, game, chat, music, mic, …),
+    // faders or not; a Mini has no fader for System, so the bar and the control center
+    // set that one over the API
+    property var volumes: ({})
+    readonly property bool systemOnFader: faders.some(f => f.channel === "system")
     // Mic mute button on the GoXLR (cough button), separate from the mic fader's mute
     property bool micButtonMuted: false
     // Poll faster while the control center shows the levels; the normal rate keeps the OSD quick enough
@@ -81,17 +86,22 @@ Singleton {
         const status = mixer.fader_status ?? {};
         const list = [];
         const next = {};
+        const all = {};
+        for (const name of Object.keys(volumes))
+            all[name.toLowerCase()] = Math.round((volumes[name] ?? 0) / 255 * 100);
+        if (JSON.stringify(all) !== JSON.stringify(root.volumes))
+            root.volumes = all;
         for (const letter of Object.keys(status).sort()) {
             const channel = String(status[letter].channel ?? "");
             const key = ["game", "system"].includes(channel.toLowerCase()) ? "game" : channel.toLowerCase();
-            list.push({ key, label: key === "game" ? "game · sys" : channel.toLowerCase(), fader: letter });
+            list.push({ key, label: key === "game" ? "game · sys" : channel.toLowerCase(), fader: letter, channel: channel.toLowerCase() });
             next[key] = {
                 level: Math.round((volumes[channel] ?? 0) / 255 * 100),
                 muted: String(status[letter].mute_state ?? "Unmuted") !== "Unmuted"
             };
         }
         const sameFaders = list.length === faders.length
-            && list.every((f, i) => f.key === faders[i].key && f.fader === faders[i].fader && f.label === faders[i].label);
+            && list.every((f, i) => f.key === faders[i].key && f.fader === faders[i].fader && f.label === faders[i].label && f.channel === faders[i].channel);
         if (!sameFaders)
             faders = list;
         if (JSON.stringify(next) !== JSON.stringify(live))
@@ -109,6 +119,22 @@ Singleton {
         // Show it right away; the next poll confirms
         live = Object.assign({}, live, { [key]: Object.assign({}, state(key), { muted }) });
         request("POST", "/api/command", body, () => refresh());
+    }
+
+    // Sets a channel's volume (0..100) over the API, e.g. "System" on a Mini, which has no
+    // fader for it. Shown right away; the next poll confirms.
+    function setChannelVolume(channel, level) {
+        if (serial === "")
+            return;
+        level = Math.max(0, Math.min(100, Math.round(level)));
+        const name = channel.charAt(0).toUpperCase() + channel.slice(1).toLowerCase();
+        volumes = Object.assign({}, volumes, { [name.toLowerCase()]: level });
+        const body = JSON.stringify({ Command: [serial, { SetVolume: [name, Math.round(level / 100 * 255)] }] });
+        request("POST", "/api/command", body, () => refresh());
+    }
+
+    function stepSystem(delta) {
+        setChannelVolume("System", (volumes.system ?? 0) + delta);
     }
 
     Timer {
