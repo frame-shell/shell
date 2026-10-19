@@ -1,6 +1,7 @@
 import Quickshell
 import qs.bar
 import qs.controlcenter
+import qs.hotkeys
 import qs.launcher
 import qs.lockscreen
 import qs.media
@@ -19,6 +20,7 @@ ShellRoot {
             launcher.hide();
             history.hide();
             wallpapers.hide();
+            hotkeys.hide();
         }
     }
 
@@ -61,6 +63,12 @@ ShellRoot {
     }
 
     SpotifyPopup {}
+
+    // Hold Super for three seconds (hypr/frame/hotkeys.lua); closed while locked
+    HotkeyOverlay {
+        id: hotkeys
+        hidden: lock.active
+    }
 
     // Shows fader, mute, volume and layout changes; never on the lockscreen
     Osd {

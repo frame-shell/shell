@@ -27,7 +27,7 @@ Item {
         { name: "lock", desc: "Lock the screen", glyph: "L", tint: Theme.primary,
           // Short delay so the snapshot does not catch the closing launcher
           command: ["sh", "-c", "sleep 0.3; qs ipc call lock lock"] },
-        { name: "logout", desc: "End the Hyprland session", glyph: "O", tint: Theme.frame, command: ["hyprctl", "dispatch", "exit"] },
+        { name: "logout", desc: "End the Hyprland session", glyph: "O", tint: Theme.frame, command: ["hyprctl", "dispatch", "hl.dsp.exit()"] },
         { name: "suspend", desc: "Sleep, locks first", glyph: "S", tint: Theme.accent, command: ["systemctl", "suspend"] },
         { name: "reboot", desc: "Restart the computer", glyph: "R", tint: Theme.warn, command: ["systemctl", "reboot"] },
         { name: "shutdown", desc: "Power off", glyph: "P", tint: Theme.danger, command: ["systemctl", "poweroff"] }

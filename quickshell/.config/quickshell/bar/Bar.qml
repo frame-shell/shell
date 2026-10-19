@@ -226,7 +226,8 @@ Scope {
                                 MouseArea {
                                     anchors.fill: parent
                                     cursorShape: Qt.PointingHandCursor
-                                    onClicked: Hyprland.dispatch(`workspace ${parent.modelData}`)
+                                    // Lua dispatcher syntax (Hyprland 0.55+)
+                                    onClicked: Hyprland.dispatch(`hl.dsp.focus({ workspace = ${parent.modelData} })`)
                                 }
                             }
                         }

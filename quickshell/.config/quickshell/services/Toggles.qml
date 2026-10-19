@@ -32,7 +32,7 @@ Singleton {
     function setGameMode(on) {
         gameMode = on;
         if (on)
-            Quickshell.execDetached(["sh", "-c", "hyprctl --batch 'keyword animations:enabled 0 ; keyword decoration:blur:enabled 0'; powerprofilesctl set performance"]);
+            Quickshell.execDetached(["sh", "-c", "hyprctl eval 'hl.config({ animations = { enabled = false }, decoration = { blur = { enabled = false } } })'; powerprofilesctl set performance"]);
         else
             Quickshell.execDetached(["sh", "-c", "hyprctl reload; powerprofilesctl set balanced"]);
     }
