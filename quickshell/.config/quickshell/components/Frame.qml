@@ -11,6 +11,10 @@ Item {
     property color labelColor: Theme.primary
     property int padding: 24
     default property alias content: body.data
+    // Fill behind the content, inside the border; transparent unless a panel needs
+    // a backdrop (the lockscreen turns it on where the picture behind is bright)
+    property color fill: "transparent"
+    property real fillOpacity: 1
 
     // Animated copy so all five lines change color together
     property color lineColor: borderColor
@@ -18,6 +22,16 @@ Item {
 
     readonly property real gapStart: label === "" ? width : 14
     readonly property real gapEnd: label === "" ? width : 14 + labelText.implicitWidth + 16
+
+    Rectangle {
+        x: 1
+        y: 1
+        width: Math.max(0, root.width - 2)
+        height: Math.max(0, root.height - 2)
+        color: root.fill
+        opacity: root.fillOpacity
+        Behavior on opacity { NumberAnimation { duration: Theme.anim.normal } }
+    }
 
     Rectangle { x: 0; y: 0; width: root.gapStart; height: 1; color: root.lineColor }
     Rectangle { x: root.gapEnd; y: 0; width: Math.max(0, root.width - root.gapEnd); height: 1; color: root.lineColor }

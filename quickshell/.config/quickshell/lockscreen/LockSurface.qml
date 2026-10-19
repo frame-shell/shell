@@ -141,6 +141,100 @@ Item {
         scale: 1 + 0.02 * root.progress
     }
 
+    // ── Readability: a backdrop where the picture behind is bright or busy ──
+
+    // The snapshot is read at low resolution once it is there; each panel's region is
+    // judged by mean luminance and contrast, and a panel on a bright or busy spot gets
+    // the theme background behind it. Everything else keeps the plain blur.
+    property var backdrops: ({})
+    readonly property real backdropOpacity: 0.72
+    // Mean luminance (0..1) above this, or contrast (standard deviation) above that
+    readonly property real brightLimit: 0.55
+    readonly property real busyLimit: 0.2
+
+    function needsBackdrop(name) {
+        return backdrops[name] === true;
+    }
+
+    // Theme background behind a plain item (not a Frame), a little larger than it
+    component Backdrop: Rectangle {
+        property Item target
+        property string name
+        property real stageStart: 0
+        property int margin: 12
+        x: target.x - margin
+        y: target.y - margin
+        width: target.width + 2 * margin
+        height: target.height + 2 * margin
+        visible: target.visible
+        color: Theme.bg
+        opacity: root.needsBackdrop(name) ? root.backdropOpacity * root.stage(stageStart) : 0
+        Behavior on opacity { NumberAnimation { duration: Theme.anim.normal } }
+    }
+
+    Canvas {
+        id: probe
+
+        width: 128
+        height: 72
+        visible: false
+        property string loadedUrl: ""
+
+        function analyse() {
+            if (root.snapshot === "")
+                return;
+            const url = `file://${root.snapshot}`;
+            if (loadedUrl !== url) {
+                loadedUrl = url;
+                loadImage(url);
+                return;
+            }
+            requestPaint();
+        }
+
+        onImageLoaded: requestPaint()
+
+        onPaint: {
+            if (loadedUrl === "" || !isImageLoaded(loadedUrl) || root.width === 0)
+                return;
+            const ctx = getContext("2d");
+            ctx.drawImage(loadedUrl, 0, 0, width, height);
+            const regions = { host: hostLabel, center: centerColumn, weather: weatherFrame, media: mediaFrame, keys: keyRow };
+            const out = {};
+            for (const name in regions) {
+                const item = regions[name];
+                if (!item || item.width <= 0 || item.height <= 0)
+                    continue;
+                const sx = Math.max(0, Math.floor(item.x / root.width * width));
+                const sy = Math.max(0, Math.floor(item.y / root.height * height));
+                const sw = Math.max(1, Math.min(width - sx, Math.ceil(item.width / root.width * width)));
+                const sh = Math.max(1, Math.min(height - sy, Math.ceil(item.height / root.height * height)));
+                const data = ctx.getImageData(sx, sy, sw, sh).data;
+                let sum = 0, sumSq = 0, n = 0;
+                for (let i = 0; i < data.length; i += 4) {
+                    const l = (0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2]) / 255;
+                    sum += l;
+                    sumSq += l * l;
+                    n++;
+                }
+                if (n === 0)
+                    continue;
+                const mean = sum / n;
+                const dev = Math.sqrt(Math.max(0, sumSq / n - mean * mean));
+                out[name] = mean > root.brightLimit || dev > root.busyLimit;
+            }
+            root.backdrops = out;
+        }
+    }
+
+    Connections {
+        target: shot
+        function onStatusChanged() {
+            if (shot.status === Image.Ready)
+                probe.analyse();
+        }
+    }
+
     // ── Top right: user@host ─────────────────────────────────
 
     FileView {
@@ -149,7 +243,9 @@ Item {
         blockLoading: true
     }
 
+    Backdrop { target: hostLabel; name: "host"; stageStart: 0.45 }
     Label {
+        id: hostLabel
         visible: root.showLogin
         anchors { top: parent.top; right: parent.right; topMargin: 56; rightMargin: 80 }
         text: `${Quickshell.env("USER")}@${hostname.text().trim()}`
@@ -165,7 +261,9 @@ Item {
         precision: SystemClock.Minutes
     }
 
+    Backdrop { target: centerColumn; name: "center"; stageStart: 0.15; margin: 36 }
     ColumnLayout {
+        id: centerColumn
         visible: root.showLogin
         anchors.centerIn: parent
         spacing: 0
@@ -283,6 +381,9 @@ Item {
     // ── Right: weather ───────────────────────────────────────
 
     Frame {
+        id: weatherFrame
+        fill: Theme.bg
+        fillOpacity: root.needsBackdrop("weather") ? root.backdropOpacity : 0
         anchors { right: parent.right; rightMargin: 80; verticalCenter: parent.verticalCenter }
         width: 380
         height: weatherColumn.implicitHeight + padding * 2
@@ -384,6 +485,9 @@ Item {
     }
 
     Frame {
+        id: mediaFrame
+        fill: Theme.bg
+        fillOpacity: root.needsBackdrop("media") ? root.backdropOpacity : 0
         anchors { left: parent.left; bottom: parent.bottom; leftMargin: 80; bottomMargin: 70 }
         width: 440
         height: 110
@@ -477,7 +581,9 @@ Item {
         onTriggered: devices.running = true
     }
 
+    Backdrop { target: keyRow; name: "keys"; stageStart: 0.45 }
     Row {
+        id: keyRow
         visible: root.showLogin
         anchors { right: parent.right; bottom: parent.bottom; rightMargin: 80; bottomMargin: 80 }
         spacing: 28
