@@ -17,6 +17,8 @@ Item {
 
     required property LockContext context
     required property string snapshot
+    // false on the other monitors: only the blurred snapshot, no clock or panels
+    property bool showLogin: true
 
     property bool appeared: false
     property real progress: context.unlocking || !appeared ? 0 : 1
@@ -31,7 +33,33 @@ Item {
 
     Component.onCompleted: {
         appeared = true;
-        input.forceActiveFocus();
+        if (showLogin)
+            input.forceActiveFocus();
+        else
+            hiddenInput.forceActiveFocus();
+    }
+
+    // Other monitors have no visible field, but typing there still fills the password
+    TextInput {
+        id: hiddenInput
+
+        enabled: !root.showLogin && !root.context.unlockInProgress
+        width: 1
+        height: 1
+        opacity: 0
+        echoMode: TextInput.Password
+
+        onTextChanged: root.context.currentText = text
+        onAccepted: root.context.tryUnlock()
+        Keys.onEscapePressed: root.context.currentText = ""
+
+        Connections {
+            target: root.context
+            function onCurrentTextChanged() {
+                if (hiddenInput.text !== root.context.currentText)
+                    hiddenInput.text = root.context.currentText;
+            }
+        }
     }
 
     // ── Small building blocks ────────────────────────────────
@@ -122,6 +150,7 @@ Item {
     }
 
     Label {
+        visible: root.showLogin
         anchors { top: parent.top; right: parent.right; topMargin: 56; rightMargin: 80 }
         text: `${Quickshell.env("USER")}@${hostname.text().trim()}`
         color: Theme.muted
@@ -137,6 +166,7 @@ Item {
     }
 
     ColumnLayout {
+        visible: root.showLogin
         anchors.centerIn: parent
         spacing: 0
 
@@ -256,7 +286,7 @@ Item {
         anchors { right: parent.right; rightMargin: 80; verticalCenter: parent.verticalCenter }
         width: 380
         height: weatherColumn.implicitHeight + padding * 2
-        visible: Weather.ready
+        visible: Weather.ready && root.showLogin
         label: "weather"
         padding: 30
         opacity: root.stage(0.35)
@@ -357,7 +387,7 @@ Item {
         anchors { left: parent.left; bottom: parent.bottom; leftMargin: 80; bottomMargin: 70 }
         width: 440
         height: 110
-        visible: root.player !== null
+        visible: root.player !== null && root.showLogin
         label: "now playing"
         padding: 22
         opacity: root.stage(0.45)
@@ -448,6 +478,7 @@ Item {
     }
 
     Row {
+        visible: root.showLogin
         anchors { right: parent.right; bottom: parent.bottom; rightMargin: 80; bottomMargin: 80 }
         spacing: 28
         opacity: root.stage(0.45)

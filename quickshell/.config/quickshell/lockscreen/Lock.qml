@@ -1,5 +1,6 @@
 import QtQuick
 import Quickshell
+import Quickshell.Hyprland
 import Quickshell.Io
 import Quickshell.Wayland
 import qs.config
@@ -28,10 +29,15 @@ Scope {
     property bool hidingForLock: false
     readonly property bool active: hidingForLock || capturing || sessionLock.locked
 
+    // The screen that shows clock, password and panels; the others only show the blur.
+    // It is the monitor you are on when locking.
+    property string loginScreen: ""
+
     function lock() {
         if (active)
             return;
         context.reset();
+        loginScreen = Hyprland.focusedMonitor?.name ?? Quickshell.screens[0]?.name ?? "";
         hidingForLock = true;
         root.aboutToLock();
         // Give the bar and open panels time to leave before the snapshot
@@ -146,6 +152,7 @@ Scope {
                 anchors.fill: parent
                 context: context
                 snapshot: root.snapshotPath(surface.screen)
+                showLogin: Quickshell.screens.length === 1 || surface.screen?.name === root.loginScreen
             }
         }
     }
