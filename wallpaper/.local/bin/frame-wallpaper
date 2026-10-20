@@ -227,7 +227,11 @@ start_on() {
         # The background layer, like mpvpaper and the shell's backdrop: on its default "bottom" layer the
         # wallpaper would take the clicks meant for the canvas desk behind the windows
         local args=(--screen-root "$monitor" --bg "$path" --fps "$fps" --scaling "$scaling" --layer background)
-        [[ $pause == true ]] || args+=(--no-fullscreen-pause)
+        # Only an active fullscreen window pauses the scene: on Wayland the engine otherwise
+        # also stops for fullscreen windows that are hidden (a special workspace, another
+        # workspace, the other monitor), and the wallpaper stands still for no visible reason
+        if [[ $pause == true ]]; then args+=(--fullscreen-pause-only-active)
+        else args+=(--no-fullscreen-pause); fi
         if [[ $volume == 0 ]]; then
             # Muted: no PipeWire streams at all. Quickshell's PipeWire code has crashed when
             # these streams came and went, which took the lockscreen down with it.
