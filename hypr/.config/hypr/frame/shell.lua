@@ -53,6 +53,30 @@ take("SUPER + CTRL + S", shell("screenshot", "screen"), { description = "frame s
 -- Screen recording: the same picker; the same key (or the dot in the bar) stops it
 take("SUPER + SHIFT + R", shell("screenshot", "record"), { description = "frame shell · screen recording: start or stop" })
 
+-- Windows over each other (on the canvas nothing keeps them apart): Alt+Tab goes to the next
+-- window and brings it up, Super+Alt+B sends the active one to the back. Super+Alt+S puts the
+-- window into the scratchpad and, pressed on a window in there, takes it out again; Super+S
+-- shows and hides the scratchpad (the distro had Super+Shift+S for that, the screenshot now)
+take("ALT + Tab", function()
+    hl.dispatch(hl.dsp.window.cycle_next())
+    hl.dispatch(hl.dsp.window.bring_to_top())
+end, { description = "frame windows · next window, brought up" })
+take("SUPER + ALT + B", hl.dsp.window.alter_zorder({ mode = "bottom" }), { description = "frame windows · window to the back" })
+take("SUPER + ALT + S", function()
+    local w = hl.get_active_window()
+    if not w then
+        return
+    end
+    if w.workspace and w.workspace.special then
+        -- Out again: onto the monitor's normal workspace, under the scratchpad
+        local mon = hl.get_active_monitor()
+        local ws = mon and mon.active_workspace
+        hl.dispatch(hl.dsp.window.move({ workspace = ws and ws.name or "e+0" }))
+    else
+        hl.dispatch(hl.dsp.window.move({ workspace = "special" }))
+    end
+end, { description = "frame windows · window into the scratchpad and back (Super+S shows it)" })
+
 hl.config({
     misc = {
         -- A restarted Quickshell can take over the lock after a crash

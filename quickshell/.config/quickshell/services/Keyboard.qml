@@ -37,6 +37,71 @@ Singleton {
 
     property var queue: []
 
+    // ── Hotkey hints on the keys ─────────────────────────────
+    // What is held right now, from Hyprland (hypr/frame/hotkeys.lua): "super", "super+shift",
+    // "ctrl+alt", … and "" on release. While the hotkey overlay is open by hand, Super counts.
+    property string heldMods: ""
+    property bool overlayOpen: false
+    readonly property string hintMods: heldMods !== "" ? heldMods : (overlayOpen ? "super" : "")
+
+    function setHeldMods(text) {
+        const next = String(text ?? "").trim().toLowerCase();
+        // Binds change with the mode (the canvas swaps them while the overview is open)
+        if (next !== "" && heldMods === "")
+            Binds.refresh();
+        heldMods = next;
+    }
+
+    // One word per key for `frame-keyboard highlight`: keys bound with exactly what is held
+    // in the text color, keys that need one modifier more dimmed, the held modifiers in primary
+    readonly property var hintKeys: {
+        if (hintMods === "")
+            return [];
+        const held = hintMods.split("+");
+        const same = {}, more = {};
+        for (const r of Binds.rows) {
+            const keys = r.key === "1…0" ? ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"] : [r.key];
+            const exact = r.mods.length === held.length && held.every(m => r.mods.includes(m));
+            const superset = !exact && held.every(m => r.mods.includes(m));
+            for (const k of keys) {
+                if (exact)
+                    same[k] = true;
+                else if (superset)
+                    more[k] = true;
+            }
+        }
+        const out = [];
+        for (const k in same)
+            out.push(`${k}=text`);
+        for (const k in more)
+            if (!same[k])
+                out.push(`${k}=muted`);
+        const modKeys = { super: ["super_l"], shift: ["shift_l", "shift_r"], ctrl: ["control_l", "control_r"], alt: ["alt_l"] };
+        for (const m of held)
+            for (const k of (modKeys[m] ?? []))
+                out.push(`${k}=primary`);
+        return out;
+    }
+
+    readonly property bool hintWanted: live && available && hintKeys.length > 0
+    onHintWantedChanged: hint.running = hintWanted
+    onHintKeysChanged: pushHint()
+
+    function pushHint() {
+        if (hint.running && hintKeys.length > 0)
+            hint.write(hintKeys.join(" ") + "\n");
+    }
+
+    // One frame-keyboard for the whole time something is held: new key lists go in over
+    // stdin, so the frame changes without the board falling back to its effect in between.
+    // Nothing is saved on the board; ending the process sends the stop packet.
+    Process {
+        id: hint
+        stdinEnabled: true
+        command: [root.tool, "highlight", "--live", "--stdin", "--layout", "de", "--skip-unknown", "--base", "bg"]
+        onStarted: root.pushHint()
+    }
+
     function refresh() {
         run(["list", "--json"], "devices");
         if (effects.length === 0) {

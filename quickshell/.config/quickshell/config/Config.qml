@@ -11,8 +11,8 @@ Singleton {
     // Blur strength of the desktop snapshot behind the lockscreen, 0 to 1
     readonly property real lockBlur: 1.0
     // Lock after this many minutes without input, screens off after that many; 0: never
-    readonly property int idleLockMinutes: 10
-    readonly property int idleScreenOffMinutes: 15
+    readonly property int idleLockMinutes: 0
+    readonly property int idleScreenOffMinutes: 0
 
     // How long a notification stays when the app does not say (ms), and how many show at once
     readonly property int notificationTimeout: 5000
@@ -86,5 +86,5 @@ Singleton {
     // Set it to true once frame-keyboard works on your board (docs/keyboard.md); the switch
     // in the app changes it until the shell restarts. true also lights the Super keys while
     // the hotkey overlay is open, and `frame theme set` puts the theme colors on the keys.
-    readonly property bool keyboardLive: false
+    readonly property bool keyboardLive: true
 }

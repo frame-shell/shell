@@ -97,5 +97,10 @@ Scope {
         function close(): void {
             root.hide();
         }
+
+        // From Hyprland while modifier keys are held (hypr/frame/hotkeys.lua): "super+shift", "" on release
+        function mods(text: string): void {
+            Keyboard.setHeldMods(text);
+        }
     }
 }

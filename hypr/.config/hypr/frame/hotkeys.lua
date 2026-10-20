@@ -19,6 +19,55 @@ local function overlay(action)
     hl.exec_cmd("qs ipc call hotkeys " .. action)
 end
 
+-- ── Hotkey hints on the keyboard ────────────────────────────
+-- While modifiers are held, the shell lights the keys that do something with them on an
+-- AULA F75 (quickshell/services/Keyboard.qml): Super with anything, or two others together
+-- (Ctrl+Alt, Ctrl+Shift). A lone Shift or Ctrl is typing. The shell hears about it a moment
+-- after the modifiers settle, so Ctrl+C and Super+Space do not light anything.
+local MODS = {
+    [133] = "super", [134] = "super", [125] = "super", [126] = "super",
+    [50] = "shift", [62] = "shift", [42] = "shift", [54] = "shift",
+    [37] = "ctrl", [105] = "ctrl", [29] = "ctrl", [97] = "ctrl",
+    [64] = "alt", [108] = "alt", [56] = "alt", [100] = "alt",
+}
+local MODS_DELAY_MS = 200
+local down = {}   -- modifier name -> true while a key of it is held
+local told = ""   -- what the shell knows
+
+local function modsText()
+    local out = {}
+    for _, m in ipairs({ "super", "ctrl", "alt", "shift" }) do
+        if down[m] then
+            out[#out + 1] = m
+        end
+    end
+    return table.concat(out, "+")
+end
+
+local function tell(text)
+    if text ~= told then
+        told = text
+        hl.exec_cmd("qs ipc call keyboard mods '" .. text .. "'")
+    end
+end
+
+local modsTimer = hl.timer(function()
+    local text = modsText()
+    if text:find("super", 1, true) or text:find("+", 1, true) then
+        tell(text)
+    end
+end, { timeout = MODS_DELAY_MS, type = "oneshot" })
+modsTimer:set_enabled(false)
+
+local function modifierChanged()
+    modsTimer:set_enabled(false)
+    if modsText() == "" then
+        tell("")
+    else
+        modsTimer:set_enabled(true)
+    end
+end
+
 local function cursorMoved()
     local now = hl.get_cursor_pos()
     if not start or not now then
@@ -45,6 +94,11 @@ tick:set_enabled(false)
 
 -- state: 0 released, 1 pressed, 2 repeated
 hl.on("input.keyboard.key", function(keycode, _, state)
+    local mod = MODS[keycode]
+    if mod and state ~= 2 then
+        down[mod] = state == 1 or nil
+        modifierChanged()
+    end
     if SUPER[keycode] then
         if state == 1 and not held then
             held, used, elapsed, start = true, false, 0, hl.get_cursor_pos()
@@ -57,7 +111,8 @@ hl.on("input.keyboard.key", function(keycode, _, state)
                 overlay("close")
             end
         end
-    elseif state == 1 and held then
+    elseif state == 1 and held and not mod then
+        -- another modifier on top of Super is no "use" of it, the overlay may still open
         used = true
     end
 end)

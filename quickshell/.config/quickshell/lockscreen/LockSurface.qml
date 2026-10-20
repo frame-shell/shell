@@ -31,12 +31,29 @@ Item {
         return Math.max(0, Math.min(1, (progress - start) / (1 - start)));
     }
 
-    Component.onCompleted: {
-        appeared = true;
+    // The field has to hold the focus before the first keystroke. On the real lock the
+    // surface learns its screen only after it exists, so showLogin can flip after
+    // Component.onCompleted: the hidden field was focused and then disabled, and nothing had
+    // the focus until a click. So the focus follows showLogin, and is set once more a moment
+    // after the surface appeared, when the compositor has handed the keyboard over.
+    function focusInput() {
         if (showLogin)
             input.forceActiveFocus();
         else
             hiddenInput.forceActiveFocus();
+    }
+
+    onShowLoginChanged: focusInput()
+
+    Timer {
+        running: root.appeared
+        interval: 150
+        onTriggered: root.focusInput()
+    }
+
+    Component.onCompleted: {
+        appeared = true;
+        focusInput();
     }
 
     // Other monitors have no visible field, but typing there still fills the password
@@ -101,6 +118,24 @@ Item {
         Layout.topMargin: 20
         Layout.bottomMargin: 4
         color: Theme.frame
+    }
+
+    // Power menu entry: icon and word in a TUI button, colored by `tint` on hover
+    component PowerButton: TuiButton {
+        id: pb
+        property string icon
+        property string text
+        property color tint: Theme.secondary
+        width: pbRow.implicitWidth + 28
+        height: 36
+        accent: tint
+        Row {
+            id: pbRow
+            anchors.centerIn: parent
+            spacing: 9
+            Icon { text: pb.icon; color: pb.hovered ? pb.tint : Theme.muted; font.pixelSize: 15 }
+            Label { text: pb.text; color: pb.hovered ? Theme.text : Theme.textDim; font.pixelSize: 15 }
+        }
     }
 
     component MediaButton: Icon {
@@ -491,5 +526,60 @@ Item {
 
         IconLabel { icon: ""; text: root.keymap; visible: root.keymap !== "" }
         IconLabel { icon: ""; text: "caps"; color: Theme.warn; visible: root.capsLock }
+    }
+
+    // ── Bottom right: power ──────────────────────────────────
+    // One button opens the menu, so a stray click shuts nothing down. systemd-logind lets
+    // the user of the active session do this without a password.
+
+    property bool powerOpen: false
+
+    function power(action) {
+        Quickshell.execDetached(["systemctl", action]);
+    }
+
+    Frame {
+        id: powerFrame
+        visible: root.showLogin
+        anchors { right: parent.right; bottom: keyRow.top; rightMargin: 80; bottomMargin: root.keymap !== "" || root.capsLock ? 24 : 0 }
+        width: powerRow.implicitWidth + padding * 2
+        height: 60
+        label: root.powerOpen ? "power · sure?" : "power"
+        labelColor: root.powerOpen ? Theme.warn : Theme.primary
+        padding: 12
+        opacity: root.stage(0.45)
+
+        Row {
+            id: powerRow
+            anchors.verticalCenter: parent.verticalCenter
+            spacing: 8
+
+            PowerButton {
+                visible: !root.powerOpen
+                icon: "\uf011"
+                text: "power"
+                onClicked: { root.powerOpen = true; root.focusInput(); }
+            }
+            PowerButton {
+                visible: root.powerOpen
+                icon: "\uf011"
+                text: "shut down"
+                tint: Theme.danger
+                onClicked: root.power("poweroff")
+            }
+            PowerButton {
+                visible: root.powerOpen
+                icon: "\uf021"
+                text: "restart"
+                tint: Theme.warn
+                onClicked: root.power("reboot")
+            }
+            PowerButton {
+                visible: root.powerOpen
+                icon: "\uf00d"
+                text: "cancel"
+                onClicked: { root.powerOpen = false; root.focusInput(); }
+            }
+        }
     }
 }
