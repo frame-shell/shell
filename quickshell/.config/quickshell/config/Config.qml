@@ -64,9 +64,6 @@ Singleton {
     // Timers and alarms (t, a): how long snooze waits, in minutes
     readonly property int snoozeMinutes: 10
 
-    // Screen recordings (Super+Shift+R): with sound from the default input (wf-recorder -a)
-    readonly property bool recordAudio: false
-
     // ── Game mode ────────────────────────────────────────────
 
     // On by itself while a game runs (Steam games: window class steam_app_<id>; gamescope;

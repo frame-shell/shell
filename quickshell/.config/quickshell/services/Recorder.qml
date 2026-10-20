@@ -3,6 +3,7 @@ pragma Singleton
 import QtQuick
 import Quickshell
 import Quickshell.Io
+import Quickshell.Services.Pipewire
 import qs.config
 
 // Screen recording with wf-recorder, started from the screenshot tool (Super+Shift+R,
@@ -10,6 +11,12 @@ import qs.config
 // recorded until you stop it, from the bar (● rec) or with the same key again. Videos go
 // to ~/Videos/recordings (your XDG videos folder); a notification offers open, folder,
 // copy (the file, for pasting into chats) and delete.
+//
+// Sound: the picker's audio panel picks the channels (the GoXLR's System, Game, Chat, Music,
+// the mic …, else the default output and input) and a level for each. More than nothing
+// chosen, frame-record-mix loops them into one sink that wf-recorder records
+// (quickshell/.local/bin/frame-record-mix). The choice is kept in
+// ~/.local/state/frameshell/record-audio.json.
 Singleton {
     id: root
 
@@ -24,6 +31,67 @@ Singleton {
     readonly property string folder: `${videosDir}/recordings`
     property string file: ""
 
+    readonly property string mixTool: `${Quickshell.env("HOME")}/.local/bin/frame-record-mix`
+    property bool mixing: false
+
+    // ── Audio channels ───────────────────────────────────────
+
+    // What can be recorded: [{ key, label, source }], source as pactl names it. The GoXLR's
+    // outputs (their monitors) and inputs from Config.goxlrOutputs / goxlrInputs, plus its
+    // stream mix; without a GoXLR the default output's monitor and the default input.
+    readonly property var channels: {
+        const out = [];
+        for (const key of Object.keys(Config.goxlrOutputs)) {
+            const node = Audio.findDevice(Audio.sinks, Config.goxlrOutputs[key]);
+            if (node)
+                out.push({ key, label: key, source: `${node.name}.monitor` });
+        }
+        for (const key of Object.keys(Config.goxlrInputs)) {
+            const node = Audio.findDevice(Audio.sources, Config.goxlrInputs[key]);
+            if (node)
+                out.push({ key, label: key, source: node.name });
+        }
+        const mix = Audio.findDevice(Audio.sources, "GoXLR Stream Mix 1");
+        if (mix)
+            out.push({ key: "stream mix", label: "stream mix", source: mix.name });
+        if (out.length === 0) {
+            const sink = Audio.sinks.find(n => n.name === Pipewire.defaultAudioSink?.name) ?? Audio.sinks[0];
+            const mic = Audio.sources.find(n => n.name === Pipewire.defaultAudioSource?.name) ?? Audio.sources.find(n => !Audio.isMonitor(n));
+            if (sink)
+                out.push({ key: "desktop", label: "desktop", source: `${sink.name}.monitor` });
+            if (mic)
+                out.push({ key: "mic", label: "mic", source: mic.name });
+        }
+        return out;
+    }
+
+    // key → { on, level 0..1 }; unknown keys are off at full level
+    function channelState(key) {
+        const s = saved.channels[key];
+        return { on: s?.on === true, level: s?.level === undefined ? 1 : Math.max(0, Math.min(1, Number(s.level))) };
+    }
+
+    function setChannel(key, on, level) {
+        const next = Object.assign({}, saved.channels);
+        next[key] = { on, level: Math.max(0, Math.min(1, level)) };
+        saved.channels = next;
+        state.writeAdapter();
+    }
+
+    readonly property var chosen: channels.filter(c => channelState(c.key).on)
+
+    FileView {
+        id: state
+        path: `${Quickshell.env("XDG_STATE_HOME") || `${Quickshell.env("HOME")}/.local/state`}/frameshell/record-audio.json`
+        printErrors: false
+        JsonAdapter {
+            id: saved
+            property var channels: ({})
+        }
+    }
+
+    // ── Recording ────────────────────────────────────────────
+
     // args as grim takes them: ["-g", "x,y wxh"] or ["-o", "<monitor>"]
     function start(args) {
         if (recording || proc.running)
@@ -31,9 +99,15 @@ Singleton {
         const d = new Date();
         const p = n => String(n).padStart(2, "0");
         file = `${folder}/recording-${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}.mp4`;
-        const audio = Config.recordAudio ? ["-a"] : [];
-        proc.command = ["sh", "-c", 'mkdir -p "$(dirname "$1")" && f=$1 && shift && exec wf-recorder -f "$f" "$@"', "frame-record", file]
-            .concat(args).concat(audio);
+        const mix = chosen.map(c => `${c.source}=${Math.round(channelState(c.key).level * 100)}`);
+        mixing = mix.length > 0;
+        if (mixing) {
+            // The mix first, then wf-recorder on its monitor; the args after "--" are the sources
+            proc.command = ["sh", "-c", 'mkdir -p "$(dirname "$1")" && f=$1 && m=$2 && shift 2 && srcs=() && while [ "$1" != "--" ]; do srcs+=("$1"); shift; done && shift && "$m" start "${srcs[@]}" >/dev/null && exec wf-recorder -f "$f" --audio=frame-rec.monitor "$@"',
+                "frame-record", file, mixTool].concat(mix).concat(["--"]).concat(args);
+        } else {
+            proc.command = ["sh", "-c", 'mkdir -p "$(dirname "$1")" && f=$1 && shift && exec wf-recorder -f "$f" "$@"', "frame-record", file].concat(args);
+        }
         proc.running = true;
         startedAt = Date.now();
         now = startedAt;
@@ -63,6 +137,10 @@ Singleton {
             const length = root.elapsed;
             root.recording = false;
             root.stopping = false;
+            if (root.mixing) {
+                root.mixing = false;
+                Quickshell.execDetached([root.mixTool, "stop"]);
+            }
             // wf-recorder ends with 0 or the signal's code when it was stopped
             if (!wasStopped && code !== 0) {
                 Notifications.push({ app: "recording", glyph: "✗", title: "recording failed",

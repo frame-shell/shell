@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+# frame-record-mix – the sound for a screen recording (services/Recorder.qml).
+#
+# wf-recorder records one PipeWire source. To record several at once, each at its own level
+# (the GoXLR's System, Game, Chat, Music, the mic …), this makes a sink "frame-rec" and loops
+# every chosen source into it; wf-recorder then records frame-rec.monitor.
+#
+#   frame-record-mix start <source>=<percent> ...   e.g. alsa_output…Speaker__sink.monitor=100
+#                                                   prints the source to record: frame-rec.monitor
+#   frame-record-mix stop                           unloads everything again
+#
+# The module ids are kept in $XDG_RUNTIME_DIR/frame-rec.modules; stop also removes leftovers
+# from a recording that never ended (the shell crashed).
+set -euo pipefail
+
+SINK=frame-rec
+STATE="${XDG_RUNTIME_DIR:-/tmp}/frame-rec.modules"
+
+die() {
+    echo "frame-record-mix: $*" >&2
+    exit 1
+}
+
+# Loopbacks and null sinks named frame-rec that nobody cleaned up
+leftovers() {
+    pactl list short modules 2>/dev/null | awk -v s="$SINK" '($2 == "module-null-sink" && index($0, "sink_name=" s)) || ($2 == "module-loopback" && index($0, "sink=" s)) { print $1 }'
+}
+
+cmd_stop() {
+    local id
+    { [[ -r $STATE ]] && cat "$STATE"; leftovers; } | sort -u | while read -r id; do
+        [[ -n $id ]] && pactl unload-module "$id" 2>/dev/null || true
+    done
+    rm -f "$STATE"
+}
+
+cmd_start() {
+    (($#)) || die "start: name at least one source as <source>=<percent>"
+    command -v pactl >/dev/null || die "pactl is missing (libpulse)"
+    cmd_stop
+    local id source percent idx
+    id=$(pactl load-module module-null-sink "sink_name=$SINK" "sink_properties=device.description=frameshell\\ recording")
+    echo "$id" >"$STATE"
+    for item in "$@"; do
+        source=${item%=*}
+        percent=${item##*=}
+        [[ $source == "$item" ]] && percent=100
+        [[ $percent =~ ^[0-9]+$ ]] || die "not a percentage: $percent"
+        # latency_msec keeps the sources in step with each other and the picture
+        if ! id=$(pactl load-module module-loopback "source=$source" "sink=$SINK" latency_msec=40 2>/dev/null); then
+            echo "frame-record-mix: could not loop $source, left out" >&2
+            continue
+        fi
+        echo "$id" >>"$STATE"
+        # The loopback is a stream into the sink; its volume is the channel's level
+        idx=$(pactl -f json list sink-inputs 2>/dev/null | python3 -c '
+import json, sys
+want = sys.argv[1]
+for i in json.load(sys.stdin):
+    if str(i.get("owner_module")) == want:
+        print(i["index"]); break' "$id" 2>/dev/null || true)
+        [[ -n $idx ]] && pactl set-sink-input-volume "$idx" "${percent}%" 2>/dev/null || true
+    done
+    echo "$SINK.monitor"
+}
+
+case ${1:-} in
+    start) shift; cmd_start "$@" ;;
+    stop) cmd_stop ;;
+    *) die "usage: frame-record-mix start <source>=<percent> ... | stop" ;;
+esac

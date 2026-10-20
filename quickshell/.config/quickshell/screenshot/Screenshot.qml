@@ -1,8 +1,10 @@
 import QtQuick
+import QtQuick.Layouts
 import Quickshell
 import Quickshell.Hyprland
 import Quickshell.Io
 import Quickshell.Wayland
+import qs.components
 import qs.config
 import qs.services
 
@@ -382,6 +384,73 @@ Scope {
                         root.captureRect(overlay.hoverWindow.x, overlay.hoverWindow.y, overlay.hoverWindow.w, overlay.hoverWindow.h);
                     else
                         root.captureOutput(overlay.modelData.name);
+                }
+            }
+
+            // ── Recording: which sound goes in, at what level ──
+            // Only in record mode, bottom left; the choice is kept (services/Recorder.qml)
+            Frame {
+                visible: root.recordMode && Recorder.channels.length > 0
+                anchors { left: parent.left; bottom: parent.bottom; leftMargin: 80; bottomMargin: 80 }
+                width: 380
+                height: audioColumn.implicitHeight + padding * 2
+                label: Recorder.chosen.length > 0 ? `audio · ${Recorder.chosen.map(c => c.label).join(", ")}` : "audio · none"
+                labelColor: root.recordMode ? Theme.danger : Theme.primary
+                padding: 18
+                opacity: root.shown
+
+                ColumnLayout {
+                    id: audioColumn
+                    anchors { left: parent.left; right: parent.right; top: parent.top }
+                    spacing: 8
+
+                    Repeater {
+                        model: Recorder.channels
+                        delegate: RowLayout {
+                            id: channelRow
+                            required property var modelData
+                            readonly property var state: Recorder.channelState(modelData.key)
+                            Layout.fillWidth: true
+                            spacing: 12
+
+                            TuiButton {
+                                Layout.preferredWidth: 110
+                                Layout.preferredHeight: 28
+                                active: channelRow.state.on
+                                accent: Theme.danger
+                                onClicked: Recorder.setChannel(channelRow.modelData.key, !channelRow.state.on, channelRow.state.level)
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: channelRow.modelData.label
+                                    color: channelRow.state.on ? Theme.text : Theme.muted
+                                    font.family: Theme.font
+                                    font.pixelSize: Theme.size.small
+                                }
+                            }
+                            TuiSlider {
+                                Layout.fillWidth: true
+                                value: channelRow.state.level
+                                dimmed: !channelRow.state.on
+                                onMoved: v => Recorder.setChannel(channelRow.modelData.key, channelRow.state.on || v > 0, v)
+                            }
+                            Text {
+                                Layout.preferredWidth: 40
+                                horizontalAlignment: Text.AlignRight
+                                text: `${Math.round(channelRow.state.level * 100)}%`
+                                color: channelRow.state.on ? Theme.textDim : Theme.muted
+                                font.family: Theme.font
+                                font.pixelSize: Theme.size.small
+                            }
+                        }
+                    }
+
+                    Text {
+                        Layout.topMargin: 4
+                        text: "click a channel to record it · drag for its level"
+                        color: Theme.muted
+                        font.family: Theme.font
+                        font.pixelSize: 12
+                    }
                 }
             }
         }

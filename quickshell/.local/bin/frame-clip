@@ -41,36 +41,31 @@ cmd_store() {
   case ${CLIPBOARD_STATE:-data} in
     sensitive | clear | nil) cat >/dev/null; return 0 ;;
   esac
-  local types ext="" t tmp sum old
-  types=$(wl-paste --list-types 2>/dev/null || true)
-  if grep -q '^x-kde-passwordManagerHint' <<<"$types"; then
-    cat >/dev/null
-    return 0
-  fi
+  local types ext tmp sum old magic
   mkdir -p "$DIR"
   chmod 700 "$DIR"
   tmp=$(mktemp "$DIR/.new.XXXXXX")
-  # A picture without plain text next to it is stored as the picture; anything with text
-  # (a browser's image also offers html) as the text
-  if ! grep -q '^text/plain' <<<"$types"; then
-    for t in png:image/png jpg:image/jpeg webp:image/webp gif:image/gif; do
-      if grep -qx "${t#*:}" <<<"$types"; then
-        ext=${t%%:*}
-        wl-paste --no-newline --type "${t#*:}" >"$tmp" 2>/dev/null || true
-        break
-      fi
-    done
-  fi
-  if [[ -z $ext ]]; then
-    ext=txt
-    cat >"$tmp"
-  else
-    cat >/dev/null
-  fi
+  # Only what wl-paste --watch hands over on stdin: text when the owner offers any text, else
+  # its first type (a screenshot: the picture). Asking wl-copy for a second type from in here
+  # deadlocked with the pipe still open, so the kind of data is read off its first bytes.
+  cat >"$tmp"
   if [[ ! -s $tmp ]]; then
     rm -f "$tmp"
     return 0
   fi
+  types=$(wl-paste --list-types 2>/dev/null || true)
+  if grep -q '^x-kde-passwordManagerHint' <<<"$types"; then
+    rm -f "$tmp"
+    return 0
+  fi
+  magic=$(head -c 12 "$tmp" | od -An -tx1 | tr -d ' \n')
+  case $magic in
+    89504e47*) ext=png ;;
+    ffd8ff*) ext=jpg ;;
+    47494638*) ext=gif ;;
+    52494646????????57454250) ext=webp ;;
+    *) ext=txt ;;
+  esac
   sum=$(md5sum <"$tmp")
   sum=${sum:0:32}
   # The same content again: the old file goes, the new one is on top
