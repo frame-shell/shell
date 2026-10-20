@@ -6,7 +6,7 @@ import Quickshell.Services.Notifications
 import qs.config
 
 // Every notification: desktop ones over D-Bus (this shell is the notification daemon)
-// and Discord events from the Vencord bridge. Popups are shown by notifications/Popups.qml,
+// and Discord/Steam events from the Vencord and Millennium bridges. Popups are shown by notifications/Popups.qml,
 // everything also lands in `history` for the bell in the bar.
 //
 // Entry: { uid, app, title, body, image, glyph, kind ("normal" | "voice" | "call" | "alarm" | "mini"),
@@ -23,6 +23,8 @@ Singleton {
     property int nextUid: 1
     // Starts the Discord socket together with the notifications
     readonly property bool discordConnected: DiscordBridge.connected
+    // Same for the Steam socket (Millennium plugin)
+    readonly property bool steamConnected: SteamBridge.connected
 
     function toArray(list) {
         const out = [];
@@ -41,6 +43,11 @@ Singleton {
         onNotification: n => {
             // Vesktop's own desktop notifications would double the ones ShellBridge sends
             if (root.discordConnected && /vesktop|discord/i.test(`${n.appName} ${n.desktopEntry}`)) {
+                n.dismiss();
+                return;
+            }
+            // Same for Steam while its plugin forwards everything
+            if (root.steamConnected && /^steam$/i.test(n.appName || n.desktopEntry)) {
                 n.dismiss();
                 return;
             }
