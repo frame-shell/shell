@@ -31,9 +31,9 @@ STATE="$STATE_DIR/wallpaper.json"
 LOG="$STATE_DIR/wallpaper.log"
 CACHE="${XDG_CACHE_HOME:-$HOME/.cache}/frameshell/wallpapers"
 WORKSHOP="${WALLPAPER_WORKSHOP:-${XDG_DATA_HOME:-$HOME/.local/share}/Steam/steamapps/workshop/content/431960}"
-# This file is stowed from <repo>/wallpaper/.local/bin, so the repo is three levels up
-REPO="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/../../.." && pwd)"
-FOLDERS=("${WALLPAPER_DIR:-$HOME/Pictures/wallpapers}" "$REPO/assets/wallpapers")
+# Your own wallpapers next to the folder in Pictures (frame keeps them outside every repo)
+ASSETS_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/frameshell/assets"
+FOLDERS=("${WALLPAPER_DIR:-$HOME/Pictures/wallpapers}" "$ASSETS_DIR/wallpapers")
 DEFAULT_STATE='{"backend":"both","fps":30,"volume":0,"scaling":"fill","pause":true,"mature":true,"screens":{}}'
 
 die() {
