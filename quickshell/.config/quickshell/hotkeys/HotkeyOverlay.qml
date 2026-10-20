@@ -40,6 +40,30 @@ Scope {
 
     onHiddenChanged: if (hidden) open = false
 
+    // Keys that do something together with Super (the lit keys of the map), as Hyprland
+    // names them; Super+1 … Super+0 come as one row
+    readonly property var superKeys: {
+        const out = [];
+        for (const r of Binds.rows) {
+            if (!r.mods.includes("super") || r.mods.includes("ctrl") || r.mods.includes("alt"))
+                continue;
+            const keys = r.key === "1…0" ? ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"] : [r.key];
+            for (const k of keys)
+                if (!out.includes(k))
+                    out.push(k);
+        }
+        return out;
+    }
+
+    // The same keys light up on an AULA F75 while the overlay is open: a live frame, nothing
+    // is saved on the keyboard. Only when the keyboard app is live (Config.keyboardLive);
+    // stopping the process sends the stop packet and the board's own effect comes back.
+    Process {
+        running: root.open && !root.hidden && Keyboard.live && Keyboard.available && root.superKeys.length > 0
+        command: [Keyboard.tool, "highlight", "--live", "--hold", "--layout", "de", "--skip-unknown",
+            "super_l=secondary"].concat(root.superKeys)
+    }
+
     PanelWindow {
         id: window
 

@@ -65,6 +65,7 @@ Singleton {
 
     // false: the keyboard app only shows what it would send (frame-keyboard dry run).
     // Set it to true once frame-keyboard works on your board (docs/keyboard.md); the switch
-    // in the app changes it until the shell restarts.
+    // in the app changes it until the shell restarts. true also lights the Super keys while
+    // the hotkey overlay is open, and `frame theme set` puts the theme colors on the keys.
     readonly property bool keyboardLive: false
 }
