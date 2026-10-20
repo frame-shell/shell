@@ -4,19 +4,108 @@ import QtQuick
 import Quickshell
 import Quickshell.Bluetooth
 import Quickshell.Io
+import Quickshell.Wayland
+import qs.config
 
-// State behind the control center toggles.
+// State behind the control center toggles, and the game mode that switches itself on
+// while a game runs (Config.gameModeAuto).
 Singleton {
     id: root
 
     property bool wifi: true
     readonly property bool bluetoothAvailable: Bluetooth.defaultAdapter !== null
     readonly property bool bluetooth: Bluetooth.defaultAdapter?.enabled ?? false
-    // Read by the notification module (planned): hide popups while true
+    // Hides popups while true (calls, alarms and critical ones still show)
     property bool silent: false
     // Blocks idle lock and screen-off; the IdleInhibitor lives in the bar
     property bool stayAwake: false
     property bool gameMode: false
+
+    // ── Game detection ───────────────────────────────────────
+
+    // Steam starts games with the window class steam_app_<id> (Proton and native alike);
+    // gamescope wraps them in its own window; Config.gameClasses adds the rest
+    function isGame(appId) {
+        const id = String(appId ?? "");
+        return /^steam_app_\d+$/.test(id) || id === "gamescope" || Config.gameClasses.includes(id);
+    }
+
+    readonly property var games: ToplevelManager.toplevels.values.filter(t => root.isGame(t.appId))
+    readonly property bool gameRunning: games.length > 0
+    readonly property string gameTitle: games.length > 0 ? (games[0].title || games[0].appId) : ""
+
+    // Set while a game turned game mode on, so its end turns it off again (and not one you
+    // switched on by hand); what it changed comes back afterwards
+    property bool autoGame: false
+    property bool silentBefore: false
+    property string profileBefore: ""
+
+    // A short wait, so a launcher window that flashes past or a game restarting itself
+    // does not flip everything twice
+    onGameRunningChanged: gameSettle.restart()
+
+    Timer {
+        id: gameSettle
+        interval: 2500
+        onTriggered: {
+            if (!Config.gameModeAuto)
+                return;
+            if (root.gameRunning && !root.autoGame && !root.gameMode)
+                root.startGame();
+            else if (!root.gameRunning && root.autoGame)
+                root.endGame();
+        }
+    }
+
+    function startGame() {
+        autoGame = true;
+        setGameMode(true);
+        silentBefore = silent;
+        if (Config.gameModeSilent)
+            silent = true;
+        if (Config.goxlrGameProfile !== "" && GoXLR.available) {
+            profileBefore = GoXLR.profile;
+            GoXLR.loadProfile(Config.goxlrGameProfile);
+        }
+        // Nothing of the wallpaper shows behind a fullscreen game
+        wallpapers("pause");
+        Notifications.push({
+            app: "game mode",
+            kind: "mini",
+            logged: false,
+            timeout: 3000,
+            glyph: "▶",
+            title: "game mode on",
+            body: gameTitle
+        });
+    }
+
+    function endGame() {
+        autoGame = false;
+        setGameMode(false);
+        silent = silentBefore;
+        if (profileBefore !== "") {
+            GoXLR.loadProfile(profileBefore);
+            profileBefore = "";
+        }
+        wallpapers("resume");
+        Notifications.push({
+            app: "game mode",
+            kind: "mini",
+            logged: false,
+            timeout: 2500,
+            glyph: "■",
+            title: "game mode off",
+            body: ""
+        });
+    }
+
+    // frame-wallpaper pause|resume (wallpaper package); nothing happens without it
+    function wallpapers(action) {
+        Quickshell.execDetached(["sh", "-c", 'w="$HOME/.local/bin/frame-wallpaper"; [ -x "$w" ] && "$w" "$1"', "frame-game", action]);
+    }
+
+    // ── Toggles ──────────────────────────────────────────────
 
     function setWifi(on) {
         wifi = on;

@@ -51,6 +51,8 @@ take("SUPER + Print", shell("screenshot", "screen"), { description = "frame shel
 -- "move window to special workspace")
 take("SUPER + SHIFT + S", shell("screenshot", "region"), { description = "frame shell · screenshot: region or window" })
 take("SUPER + CTRL + S", shell("screenshot", "screen"), { description = "frame shell · screenshot: whole screen" })
+-- Screen recording: the same picker; the same key (or the dot in the bar) stops it
+take("SUPER + SHIFT + R", shell("screenshot", "record"), { description = "frame shell · screen recording: start or stop" })
 
 hl.config({
     misc = {

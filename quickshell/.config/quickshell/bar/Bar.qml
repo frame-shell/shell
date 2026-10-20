@@ -304,6 +304,21 @@ Scope {
                     anchors { right: parent.right; rightMargin: 10; verticalCenter: parent.verticalCenter }
                     spacing: 0
 
+                    // A screen recording (services/Recorder.qml) runs; click stops it
+                    Bracket { text: "["; visible: Recorder.recording }
+                    Label {
+                        visible: Recorder.recording
+                        text: Recorder.stopping ? "● saving …" : `● rec ${Recorder.elapsed}`
+                        color: Theme.danger
+
+                        MouseArea {
+                            anchors.fill: parent
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: Recorder.stop()
+                        }
+                    }
+                    Bracket { text: "]─"; visible: Recorder.recording }
+
                     Bracket { text: "["; visible: root.player !== null }
                     Label {
                         id: mediaLabel
@@ -351,6 +366,22 @@ Scope {
                     Bracket { text: "─["; visible: root.keymap !== "" }
                     Muted { text: root.keymap; visible: root.keymap !== "" }
                     Bracket { text: "]"; visible: root.keymap !== "" }
+
+                    // Package updates (services/Updates.qml): only there when there are some;
+                    // click runs them in Ghostty
+                    Bracket { text: "─["; visible: Updates.total > 0 || Updates.updating }
+                    Label {
+                        visible: Updates.total > 0 || Updates.updating
+                        text: Updates.updating ? "updating …" : Updates.aurCount > 0 ? `↑ ${Updates.total} (${Updates.aurCount} aur)` : `↑ ${Updates.total}`
+                        color: Updates.updating ? Theme.muted : Theme.warn
+
+                        MouseArea {
+                            anchors.fill: parent
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: Updates.update()
+                        }
+                    }
+                    Bracket { text: "]"; visible: Updates.total > 0 || Updates.updating }
 
                     // Bell: notifications missed while "silent" was on; click for the history
                     Bracket { text: "─[" }

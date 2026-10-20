@@ -114,6 +114,7 @@ Singleton {
         if (JSON.stringify(next) !== JSON.stringify(live))
             live = next;
         micButtonMuted = String(mixer.cough_button?.state ?? "Unmuted") !== "Unmuted";
+        profile = String(mixer.profile_name ?? "");
         serial = id;
         available = true;
     }
@@ -159,6 +160,18 @@ Singleton {
                 root.request("POST", "/api/command", body, () => {});
             }
         }
+    }
+
+    // The profile that is loaded now (mixer.profile_name), and switching to another one,
+    // e.g. for game mode. LoadProfile takes the name and whether to keep it as the profile
+    // the utility starts with (false: only for now). Not tried on a device yet.
+    property string profile: ""
+
+    function loadProfile(name) {
+        if (serial === "" || name === "" || name === profile)
+            return;
+        const body = JSON.stringify({ Command: [serial, { LoadProfile: [name, false] }] });
+        request("POST", "/api/command", body, () => refresh());
     }
 
     function stepSystem(delta) {

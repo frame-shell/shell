@@ -13,7 +13,7 @@ import qs.services
 // notification shows it with "open", "folder" and "delete". grim does the capture,
 // wl-copy the clipboard.
 //
-// `qs ipc call screenshot region|screen|close`
+// `qs ipc call screenshot region|screen|record|close` (record: Super+Shift+R, see services/Recorder.qml)
 Scope {
     id: root
 
@@ -37,6 +37,8 @@ Scope {
 
     property string pendingFile: ""
     property var pendingArgs: []
+    // The same picker for a screen recording (services/Recorder.qml) instead of a picture
+    property bool recordMode: false
 
     function show() {
         if (hidden || open)
@@ -48,6 +50,7 @@ Scope {
 
     function close() {
         open = false;
+        recordMode = false;
     }
 
     function monitorNamed(name) {
@@ -83,9 +86,9 @@ Scope {
 
     function start(args) {
         // One shot at a time: a second one would change the file name under the first
-        if (captureDelay.running || grimProc.running)
+        if (captureDelay.running || grimProc.running || (recordMode && Recorder.recording))
             return;
-        pendingFile = `${folder}/screenshot-${stamp()}.png`;
+        pendingFile = recordMode ? "" : `${folder}/screenshot-${stamp()}.png`;
         pendingArgs = args;
         open = false;
         captureDelay.restart();
@@ -95,6 +98,11 @@ Scope {
         id: captureDelay
         interval: 220
         onTriggered: {
+            if (root.recordMode) {
+                root.recordMode = false;
+                Recorder.start(root.pendingArgs);
+                return;
+            }
             grimProc.command = ["sh", "-c", 'mkdir -p "$(dirname "$1")" && grim "$2" "$3" "$1" && wl-copy --type image/png < "$1"', "frame-shot", root.pendingFile].concat(root.pendingArgs);
             grimProc.running = true;
         }
@@ -263,7 +271,7 @@ Scope {
                 height: overlay.target.height
                 color: "transparent"
                 border.width: 1
-                border.color: Theme.primary
+                border.color: root.recordMode ? Theme.danger : Theme.primary
                 opacity: root.shown
 
                 Rectangle {
@@ -272,7 +280,7 @@ Scope {
                     height: 24
                     color: Theme.bg
                     border.width: 1
-                    border.color: Theme.primary
+                    border.color: root.recordMode ? Theme.danger : Theme.primary
                     Text {
                         id: targetLabel
                         anchors.centerIn: parent
@@ -307,7 +315,8 @@ Scope {
 
             Text {
                 anchors { horizontalCenter: parent.horizontalCenter; bottom: parent.bottom; bottomMargin: 28 }
-                text: "drag · region    click · window    enter · whole screen    esc · cancel"
+                text: root.recordMode ? "record:  drag · region    click · window    enter · whole screen    esc · cancel"
+                    : "drag · region    click · window    enter · whole screen    esc · cancel"
                 color: Theme.textDim
                 font.family: Theme.font
                 font.pixelSize: Theme.size.small
@@ -381,6 +390,17 @@ Scope {
         target: "screenshot"
 
         function region(): void {
+            root.recordMode = false;
+            root.show();
+        }
+
+        // Pick what to record; while a recording runs, the same call stops it
+        function record(): void {
+            if (Recorder.recording) {
+                Recorder.stop();
+                return;
+            }
+            root.recordMode = true;
             root.show();
         }
 

@@ -61,6 +61,22 @@ Singleton {
     // Timers and alarms (t, a): how long snooze waits, in minutes
     readonly property int snoozeMinutes: 10
 
+    // Screen recordings (Super+Shift+R): with sound from the default input (wf-recorder -a)
+    readonly property bool recordAudio: false
+
+    // ── Game mode ────────────────────────────────────────────
+
+    // On by itself while a game runs (Steam games: window class steam_app_<id>; gamescope;
+    // the classes below), off again when the last one closes. The toggle in the control
+    // center still works by hand.
+    readonly property bool gameModeAuto: true
+    // Other games, by window class as `hyprctl clients` shows it (exact names, no patterns)
+    readonly property var gameClasses: []
+    // Popups stay quiet while playing (calls and alarms still get through)
+    readonly property bool gameModeSilent: true
+    // GoXLR profile to load while playing, the one before comes back after; empty: none
+    readonly property string goxlrGameProfile: ""
+
     // ── Keyboard (AULA F75, Super+K) ─────────────────────────
 
     // false: the keyboard app only shows what it would send (frame-keyboard dry run).
