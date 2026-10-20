@@ -254,7 +254,8 @@ Scope {
                     required property int index
                     color: Theme.bg
                     opacity: 0.55 * root.shown
-                    x: index === 1 ? overlay.target.x + overlay.target.width : index === 3 ? overlay.target.x : 0
+                    // 0 top (full width), 1 right, 2 bottom (full width), 3 left
+                    x: index === 1 ? overlay.target.x + overlay.target.width : 0
                     y: index === 0 ? 0 : index === 2 ? overlay.target.y + overlay.target.height : overlay.target.y
                     width: index === 0 || index === 2 ? overlay.width : index === 1 ? overlay.width - (overlay.target.x + overlay.target.width) : overlay.target.x
                     height: index === 0 ? (overlay.hasTarget ? overlay.target.y : overlay.height) : index === 2 ? overlay.height - (overlay.target.y + overlay.target.height) : overlay.target.height
