@@ -12,6 +12,11 @@ hl.on("hyprland.start", function()
     hl.exec_cmd("wl-paste --watch ~/.local/bin/frame-clip store")
     -- GoXLR faders and mutes for the shell; does nothing without GoXLR Utility
     hl.exec_cmd("command -v goxlr-daemon >/dev/null && goxlr-daemon")
+    -- `frame login auto`: greetd logs in without a greeter, so the session starts locked and
+    -- the shell's lockscreen asks for the password instead. Only here, at Hyprland's start,
+    -- never when the shell alone restarts.
+    hl.exec_cmd("sh -c 'grep -qs \"^\\[initial_session\\]\" /etc/greetd/config.toml || exit 0; "
+        .. "for i in $(seq 1 80); do qs ipc call lock lock >/dev/null 2>&1 && [ \"$(qs ipc call lock isLocked 2>/dev/null)\" = true ] && exit 0; sleep 0.25; done'")
 end)
 
 -- A key bound twice runs both binds, and the distro config (CachyOS: config/binds.lua)
