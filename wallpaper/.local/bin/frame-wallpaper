@@ -6,9 +6,9 @@
 #
 # Backends ("backend" in the state, asked once by `frame install`):
 #   both   Wallpaper Engine scenes and videos from the Steam Workshop (linux-wallpaperengine),
-#          plus videos (mpvpaper) and images (swaybg) from the wallpaper folders
-#   mpv    only the wallpaper folders: videos through mpvpaper, images through swaybg
-#   image  only still images through swaybg, lowest power use
+#          plus videos (mpvpaper) from the wallpaper folders; images the shell draws itself
+#   mpv    only the wallpaper folders: videos through mpvpaper, images drawn by the shell
+#   image  only still images, drawn by the shell (wallpapers/Backdrop.qml), lowest power use
 # Wallpaper folders: ~/Pictures/wallpapers (or $WALLPAPER_DIR) and assets/wallpapers in the repo.
 #
 # Usage:
@@ -174,6 +174,7 @@ stop_backends() {
     for pid in $(all_backend_pids); do kill -CONT "$pid" 2>/dev/null || true; done
     pkill -f '(^|/)linux-wallpaperengine( |$)' 2>/dev/null || true
     pkill -x mpvpaper 2>/dev/null || true
+    # swaybg ran the still pictures before the shell drew them; an old one may still be up
     pkill -x swaybg 2>/dev/null || true
     sleep 0.2
 }
@@ -213,12 +214,6 @@ spawn() {
     setsid -f sh -c 'exec "$@" 2>&1 | grep --line-buffered -v "DBus error" >>"$0"' "$LOG" "$@" </dev/null
 }
 
-background_color() {
-    # The background of the active theme (frame theme set …)
-    local theme
-    theme=$(cat "$STATE_DIR/theme" 2>/dev/null || echo periwinkle)
-    jq -r '.colors.bg // "#0b0c1f"' "$REPO/themes/$theme.json" 2>/dev/null || echo "#0b0c1f"
-}
 
 start_on() {
     local monitor=$1 path=$2 kind=$3 settings=$4
@@ -229,7 +224,7 @@ start_on() {
     pause="$(jq -r .pause <<<"$settings")"
 
     if [[ -d $path ]]; then
-        # The background layer, like swaybg and mpvpaper: on its default "bottom" layer the
+        # The background layer, like mpvpaper and the shell's backdrop: on its default "bottom" layer the
         # wallpaper would take the clicks meant for the canvas desk behind the windows
         local args=(--screen-root "$monitor" --bg "$path" --fps "$fps" --scaling "$scaling" --layer background)
         [[ $pause == true ]] || args+=(--no-fullscreen-pause)
@@ -250,7 +245,8 @@ start_on() {
         [[ $pause == true ]] && flags+=(-p)
         spawn mpvpaper "${flags[@]}" -o "$opts" "$monitor" "$path"
     else
-        spawn swaybg -o "$monitor" -i "$path" -m "$scaling"
+        # Still pictures: the shell draws them from the state (quickshell wallpapers/Backdrop.qml)
+        :
     fi
 }
 
@@ -270,7 +266,7 @@ cmd_pause() {
 
 # Lets them run again. linux-wallpaperengine does not come back from a lock on its own
 # (the compositor stops asking it for frames and it waits forever), so it is started anew;
-# mpvpaper and swaybg just continue.
+# mpvpaper just continues.
 cmd_resume() {
     local pid
     for pid in $(backend_pids); do kill -CONT "$pid" 2>/dev/null || true; done
@@ -302,7 +298,9 @@ cmd_apply() {
             start_on "$monitor" "$path" "$kind" "$settings"
         else
             # Nothing set, the file is gone, or the backend cannot show it: plain background
-            spawn swaybg -o "$monitor" -c "$(background_color)"
+            # Nothing set, the file is gone, or the backend cannot show it: the shell shows
+            # the theme background there (wallpapers/Backdrop.qml)
+            :
         fi
     done
     stop_old_backends "$old"

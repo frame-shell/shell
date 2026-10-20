@@ -10,7 +10,7 @@ import qs.config
 //   { nextId, timers: [{ id, label, ends (ms since 1970), total (s) }],
 //     alarms: [{ id, label, hour, minute, days: [0–6, 0 = Sunday] (empty = once), enabled, next (ms) }] }
 // When one goes off, its notification stays until you pick snooze or done, and a sound
-// plays for up to a minute (sound-theme-freedesktop, pw-play).
+// plays for up to a minute (data/alarm.wav in the shell folder, pw-play).
 Singleton {
     id: root
 
@@ -23,7 +23,7 @@ Singleton {
     property int rings: 0
 
     readonly property var dayNames: ["sun", "mon", "tue", "wed", "thu", "fri", "sat"]
-    readonly property string sound: "/usr/share/sounds/freedesktop/stereo/alarm-clock-elapsed.oga"
+    readonly property string sound: decodeURIComponent(Qt.resolvedUrl("../data/alarm.wav").toString().replace("file://", ""))
 
     // ── Timers ───────────────────────────────────────────────
 

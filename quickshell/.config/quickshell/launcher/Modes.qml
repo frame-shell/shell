@@ -508,7 +508,7 @@ Item {
 
     function emojiRows(rest) {
         if (!Emoji.available)
-            return [info("no emoji list", "install unicode-emoji (frame install quickshell)")];
+            return [info("no emoji list", "data/emoji.tsv is missing from the shell folder (frame update quickshell)")];
         const list = Emoji.search(rest);
         if (list.length === 0)
             return [info(rest === "" ? "type to search emoji" : "no emoji found", "# heart · # thumbs up · # cat")];
@@ -599,7 +599,7 @@ Item {
 
     function clipRows(rest) {
         if (!Clipboard.loaded)
-            return [info("reading clipboard history …", "needs cliphist")];
+            return [info("reading clipboard history …", "from frame-clip")];
         const q = rest.toLowerCase();
         const list = Clipboard.entries.filter(e => q === "" || e.text.toLowerCase().includes(q)).slice(0, 60);
         if (list.length === 0)
@@ -734,8 +734,12 @@ Item {
         case "emoji":
             Emoji.used(r.char);
             if (shift)
-                // Typed into the window that gets focus back once the launcher is gone
-                run(["sh", "-c", 'sleep 0.25; wtype -- "$0"', r.char]);
+                // Pasted into the window that gets focus back once the launcher is gone: into
+                // the clipboard, then Hyprland presses Ctrl+V there (Ctrl+Shift+V in terminals)
+                run(["sh", "-c", 'printf "%s" "$0" | wl-copy; sleep 0.25; '
+                    + 'case "$(hyprctl activewindow | sed -n "s/^[[:space:]]*class: //p")" in '
+                    + '*ghostty*|*kitty*|*foot*|*Alacritty*|*wezterm*|*konsole*) mods="CTRL SHIFT" ;; *) mods="CTRL" ;; esac; '
+                    + 'hyprctl dispatch "hl.dsp.exec_raw(\\"sendshortcut\\", \\"$mods, V, activewindow\\")"', r.char]);
             else
                 copy(r.char);
             return close;

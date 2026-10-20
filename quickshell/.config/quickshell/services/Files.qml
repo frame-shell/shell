@@ -5,9 +5,11 @@ import Quickshell
 import Quickshell.Io
 import qs.config
 
-// File and folder search for the launcher (/), with fd. fd skips hidden files and what
-// .gitignore lists, so build folders and caches stay out. The last word is the name to
-// look for; words before it narrow down the path ("/ dev notes" finds notes under Dev).
+// File and folder search for the launcher (/), with plain find (no extra package). Hidden
+// folders and the usual build and dependency folders (node_modules, target, build, dist,
+// __pycache__, venvs) are skipped, so caches and build output stay out. The last word is
+// the name to look for; words before it narrow down the path ("/ dev notes" finds notes
+// under Dev).
 //
 // results: [{ path, name, dir (parent folder), isDir, depth }]
 Singleton {
@@ -69,10 +71,14 @@ Singleton {
             const words = root.query.split(/\s+/);
             proc.running = false;
             proc.wanted = root.query;
+            // The name is matched as text, so * ? [ in it are escaped for find's pattern;
+            // head stops find after 60 hits instead of walking the whole home folder
+            const name = words[words.length - 1].replace(/[*?[\]\\]/g, "\\$&");
             proc.command = ["sh", "-c",
-                'cd "$0" || exit; fd --type d --max-results 20 --fixed-strings --color never --absolute-path -- "$1" | sed "s/^/d\t/"; '
-                + 'fd --type f --max-results 40 --fixed-strings --color never --absolute-path -- "$1" | sed "s/^/f\t/"',
-                root.base, words[words.length - 1]];
+                'find "$0" -mindepth 1 \\( -name ".*" -o -name node_modules -o -name target -o -name build -o -name dist '
+                + '-o -name __pycache__ -o -name venv -o -name .venv \\) -prune -o \\( -type d -o -type f \\) -iname "*$1*" '
+                + '-printf "%y\\t%p\\n" 2>/dev/null | head -n 60',
+                root.base, name];
             proc.running = true;
         }
     }

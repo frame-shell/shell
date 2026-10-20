@@ -10,6 +10,9 @@ Singleton {
     readonly property int weatherInterval: 15
     // Blur strength of the desktop snapshot behind the lockscreen, 0 to 1
     readonly property real lockBlur: 1.0
+    // Lock after this many minutes without input, screens off after that many; 0: never
+    readonly property int idleLockMinutes: 10
+    readonly property int idleScreenOffMinutes: 15
 
     // How long a notification stays when the app does not say (ms), and how many show at once
     readonly property int notificationTimeout: 5000

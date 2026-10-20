@@ -27,8 +27,8 @@ Singleton {
     readonly property color ok: "#6ee0b6"
 
     readonly property string font: "JetBrains Mono"
-    // Nerd Font build of the same face, for icons (weather, media, keyboard)
-    readonly property string iconFont: "JetBrainsMono Nerd Font"
+    // Only the Nerd Font symbols (ttf-nerd-fonts-symbols-mono, a few MB), for icons
+    readonly property string iconFont: "Symbols Nerd Font Mono"
 
     readonly property QtObject size: QtObject {
         readonly property int small: 15

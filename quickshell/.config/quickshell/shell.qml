@@ -66,6 +66,9 @@ ShellRoot {
     }
 
     // Separate wallpaper app (Super+W)
+    // Still wallpapers and the plain background (the moving ones come from frame-wallpaper)
+    Backdrop {}
+
     WallpaperApp {
         id: wallpapers
     }

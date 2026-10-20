@@ -2,15 +2,14 @@
 -- Loaded from your own hyprland.lua with require("frame/shell"); `frame install hypr`
 -- adds that line. Descriptions show up in the hotkey overlay (hold Super).
 
--- Quickshell runs bar, launcher, lockscreen and the rest; hypridle locks after idle
--- time (see hypridle.conf); frame-wallpaper starts the wallpaper picked in the app;
--- cliphist keeps what you copy for the launcher
+-- Quickshell runs bar, launcher, lockscreen and the rest (also the idle lock and screen
+-- off, lockscreen/Lock.qml); frame-wallpaper starts the wallpaper picked in the app;
+-- frame-clip keeps what you copy for the launcher
 hl.on("hyprland.start", function()
     hl.exec_cmd("qs")
-    hl.exec_cmd("hypridle")
     hl.exec_cmd("~/.local/bin/frame-wallpaper apply")
     -- Clipboard history for the launcher (;)
-    hl.exec_cmd("command -v cliphist >/dev/null && wl-paste --watch cliphist store")
+    hl.exec_cmd("wl-paste --watch ~/.local/bin/frame-clip store")
     -- GoXLR faders and mutes for the shell; does nothing without GoXLR Utility
     hl.exec_cmd("command -v goxlr-daemon >/dev/null && goxlr-daemon")
 end)

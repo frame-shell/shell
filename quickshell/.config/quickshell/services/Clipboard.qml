@@ -4,18 +4,20 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 
-// Clipboard history for the launcher (;), from cliphist. Hyprland starts
-// `wl-paste --watch cliphist store` (hypr/frame/shell.lua), which records every copy.
+// Clipboard history for the launcher (;, Super+V), from frame-clip (quickshell/.local/bin):
+// Hyprland starts `wl-paste --watch frame-clip store` (hypr/frame/shell.lua), which keeps
+// every copy as a file in ~/.cache/frameshell/clipboard. Pictures are files already, so the
+// launcher shows them as they are.
 //
-// entries: [{ line (as cliphist prints it, needed to decode or delete), id, text, image,
-//   preview (path of the decoded picture once it is there, else "") }]
-// Pictures are decoded once into $XDG_RUNTIME_DIR/qs-clip so the launcher can show them.
+// entries: [{ id, kind (txt, png, jpg, webp, gif), text (a text's first 700 characters, or a
+//   picture's size), image, preview (a picture's file, else "") }]
 Singleton {
     id: root
 
     property var entries: []
     property bool loaded: false
-    readonly property string previewDir: `${Quickshell.env("XDG_RUNTIME_DIR")}/qs-clip`
+    readonly property string tool: `${Quickshell.env("HOME")}/.local/bin/frame-clip`
+    readonly property string dir: `${Quickshell.env("XDG_CACHE_HOME") || Quickshell.env("HOME") + "/.cache"}/frameshell/clipboard`
 
     function refresh() {
         list.running = true;
@@ -24,87 +26,36 @@ Singleton {
     function parse(text) {
         const out = [];
         for (const line of text.split("\n")) {
-            const tab = line.indexOf("\t");
-            if (tab < 0)
+            const parts = line.split("\t");
+            if (parts.length < 3)
                 continue;
-            const body = line.slice(tab + 1);
-            // Pictures show up as "[[ binary data 1.2 MiB png 1920x1080 ]]"
-            const bin = /^\[\[ binary data (.+) \]\]$/.exec(body);
-            const id = line.slice(0, tab);
-            // "5 MiB png 2560x1440": the format is the third word
-            const ext = bin ? (bin[1].split(" ")[2] ?? "png") : "";
-            out.push({ line, id, text: bin ? bin[1] : body, image: !!bin, preview: "", file: bin ? `${previewDir}/${id}.${ext}` : "" });
+            const [id, kind] = parts;
+            const image = kind !== "txt";
+            out.push({
+                id, kind, image,
+                // frame-clip writes a text's line breaks as \x1f, so one entry stays one line
+                text: image ? `${kind} · ${parts[2]}` : parts.slice(2).join("\t").replace(/\x1f/g, "\n"),
+                preview: image ? `${dir}/${id}.${kind}` : ""
+            });
         }
         entries = out;
         loaded = true;
-        decodePictures();
-    }
-
-    // Writes every picture that is not decoded yet (the newest 40), drops thumbnails of
-    // entries that left the history, then marks the entries whose file is there
-    function decodePictures() {
-        const pictures = entries.filter(e => e.image).slice(0, 40);
-        if (pictures.length === 0)
-            return;
-        // A run still going ignores running = true; it starts once more when done
-        if (thumbs.running) {
-            thumbs.again = true;
-            return;
-        }
-        thumbs.command = ["sh", "-c", `
-            dir=$1; shift
-            mkdir -p "$dir"
-            keep=" "
-            for line in "$@"; do
-                id=$(printf '%s' "$line" | cut -f1)
-                ext=$(printf '%s' "$line" | awk '{print $7}')
-                keep="$keep$id.$ext "
-                f="$dir/$id.$ext"
-                [ -s "$f" ] || printf '%s' "$line" | cliphist decode > "$f" 2>/dev/null || rm -f "$f"
-            done
-            for f in "$dir"/*; do
-                [ -e "$f" ] || continue
-                case "$keep" in *" $(basename "$f") "*) ;; *) rm -f "$f" ;; esac
-            done
-            # The files that are really there, for the shell to mark
-            for f in "$dir"/*; do
-                [ -s "$f" ] && printf '%s\\n' "$f"
-            done`, "clip-thumbs", previewDir].concat(pictures.map(e => e.line));
-        thumbs.running = true;
-    }
-
-    Process {
-        id: thumbs
-        property bool again: false
-        stdout: StdioCollector {
-            onStreamFinished: {
-                // Only entries whose picture exists get a preview (older than the newest 40 do not)
-                const have = text.split("\n").filter(f => f !== "");
-                root.entries = root.entries.map(e => e.image && have.includes(e.file) ? Object.assign({}, e, { preview: e.file }) : e);
-            }
-        }
-        onExited: {
-            if (again) {
-                again = false;
-                Qt.callLater(root.decodePictures);
-            }
-        }
     }
 
     function copy(entry) {
-        Quickshell.execDetached(["sh", "-c", 'printf "%s" "$0" | cliphist decode | wl-copy', entry.line]);
+        Quickshell.execDetached([tool, "copy", entry.id]);
     }
 
     function remove(entry) {
         entries = entries.filter(e => e.id !== entry.id);
-        Quickshell.execDetached(["sh", "-c", 'printf "%s" "$0" | cliphist delete', entry.line]);
+        Quickshell.execDetached([tool, "delete", entry.id]);
     }
 
     Process {
         id: list
-        command: ["cliphist", "list"]
+        command: [root.tool, "list"]
         stdout: StdioCollector {
-            onStreamFinished: root.parse(text)
+            onStreamFinished: root.parse(this.text)
         }
     }
 }

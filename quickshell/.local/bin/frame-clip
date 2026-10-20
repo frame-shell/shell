@@ -1,0 +1,114 @@
+#!/usr/bin/env bash
+# frame-clip – clipboard history for the launcher (;, Super+V), instead of cliphist.
+#
+# Hyprland runs `wl-paste --watch frame-clip store` (hypr/frame/shell.lua): every copy becomes
+# one file in ~/.cache/frameshell/clipboard (only you can read the folder), the newest 100
+# stay, and copying something that is already there moves it to the top instead of storing
+# it twice. What password managers mark as secret is not kept.
+#
+#   frame-clip store         read the new clipboard (from wl-paste --watch)
+#   frame-clip list          newest first, one line each: <id> TAB <kind> TAB <preview>
+#                            (kind: txt, png, jpg, webp, gif; the preview of a text has its
+#                            line breaks as \x1f, a picture's is its size)
+#   frame-clip copy <id>     put an entry back into the clipboard
+#   frame-clip delete <id>   forget one
+#   frame-clip clear         forget all
+set -euo pipefail
+
+DIR="${XDG_CACHE_HOME:-$HOME/.cache}/frameshell/clipboard"
+MAX=100
+
+mime_of() {
+  case $1 in
+    txt) echo "text/plain;charset=utf-8" ;;
+    png) echo image/png ;;
+    jpg) echo image/jpeg ;;
+    webp) echo image/webp ;;
+    gif) echo image/gif ;;
+  esac
+}
+
+file_of() {
+  local f
+  for f in "$DIR/$1".*; do
+    [[ -f $f ]] && { echo "$f"; return 0; }
+  done
+  return 1
+}
+
+cmd_store() {
+  # wl-paste says "sensitive" for password-manager copies and "clear" when the clipboard emptied
+  case ${CLIPBOARD_STATE:-data} in
+    sensitive | clear | nil) cat >/dev/null; return 0 ;;
+  esac
+  local types ext="" t tmp sum old
+  types=$(wl-paste --list-types 2>/dev/null || true)
+  if grep -q '^x-kde-passwordManagerHint' <<<"$types"; then
+    cat >/dev/null
+    return 0
+  fi
+  mkdir -p "$DIR"
+  chmod 700 "$DIR"
+  tmp=$(mktemp "$DIR/.new.XXXXXX")
+  # A picture without plain text next to it is stored as the picture; anything with text
+  # (a browser's image also offers html) as the text
+  if ! grep -q '^text/plain' <<<"$types"; then
+    for t in png:image/png jpg:image/jpeg webp:image/webp gif:image/gif; do
+      if grep -qx "${t#*:}" <<<"$types"; then
+        ext=${t%%:*}
+        wl-paste --no-newline --type "${t#*:}" >"$tmp" 2>/dev/null || true
+        break
+      fi
+    done
+  fi
+  if [[ -z $ext ]]; then
+    ext=txt
+    cat >"$tmp"
+  else
+    cat >/dev/null
+  fi
+  if [[ ! -s $tmp ]]; then
+    rm -f "$tmp"
+    return 0
+  fi
+  sum=$(md5sum <"$tmp")
+  sum=${sum:0:32}
+  # The same content again: the old file goes, the new one is on top
+  for old in "$DIR"/*-"$sum".*; do
+    [[ -e $old ]] && rm -f "$old"
+  done
+  mv "$tmp" "$DIR/$(date +%s%3N)-$sum.$ext"
+  # Only the newest MAX
+  ls -1t "$DIR" | tail -n +$((MAX + 1)) | while IFS= read -r old; do rm -f "$DIR/$old"; done
+}
+
+cmd_list() {
+  [[ -d $DIR ]] || return 0
+  local name id kind preview
+  ls -1t "$DIR" | while IFS= read -r name; do
+    [[ $name == .* ]] && continue
+    id=${name%.*}
+    kind=${name##*.}
+    if [[ $kind == txt ]]; then
+      preview=$(head -c 700 "$DIR/$name" | tr '\t' ' ' | tr '\n' '\037')
+    else
+      preview=$(numfmt --to=iec --suffix=B "$(stat -c %s "$DIR/$name")" 2>/dev/null || echo "?")
+    fi
+    printf '%s\t%s\t%s\n' "$id" "$kind" "$preview"
+  done
+}
+
+cmd_copy() {
+  local f
+  f=$(file_of "${1:?id}") || exit 1
+  wl-copy --type "$(mime_of "${f##*.}")" <"$f"
+}
+
+case ${1:-} in
+  store) cmd_store ;;
+  list) cmd_list ;;
+  copy) cmd_copy "${2:-}" ;;
+  delete) f=$(file_of "${2:?id}") && rm -f "$f" ;;
+  clear) rm -rf "$DIR" ;;
+  *) sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
+esac

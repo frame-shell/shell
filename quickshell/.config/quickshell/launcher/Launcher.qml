@@ -99,7 +99,7 @@ Scope {
             root.show();
         }
 
-        // Super+V: the clipboard history (cliphist), like Windows
+        // Super+V: the clipboard history (frame-clip), like Windows
         function clipboard(): void {
             root.show("; ");
         }

@@ -4,7 +4,8 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 
-// Emoji for the launcher (#), read from Unicode's emoji-test.txt (package unicode-emoji).
+// Emoji for the launcher (#), from data/emoji.tsv in the shell folder (made from Unicode's
+// emoji-test.txt, no package needed).
 // Skin-tone variants are left out to keep the list short. Recently picked ones come first
 // for an empty search; they live in emoji-recent.json in Quickshell's state folder.
 //
@@ -16,17 +17,15 @@ Singleton {
     property var recent: []
     readonly property bool available: list.length > 0
 
+    // data/emoji.tsv: char TAB name TAB subgroup, made once from Unicode's emoji-test.txt
     function parse(text) {
         const out = [];
-        let group = "";
         for (const line of text.split("\n")) {
-            if (line.startsWith("# subgroup: ")) {
-                group = line.slice(12).trim();
+            if (line === "" || line.startsWith("#"))
                 continue;
-            }
-            const m = /; fully-qualified\s+# (\S+) E\d+\.\d+ (.+)$/.exec(line);
-            if (m && !m[2].includes("skin tone"))
-                out.push({ char: m[1], name: m[2], group });
+            const [char, name, group] = line.split("\t");
+            if (char && name)
+                out.push({ char, name, group: group ?? "" });
         }
         list = out;
     }
@@ -64,7 +63,7 @@ Singleton {
     }
 
     FileView {
-        path: "/usr/share/unicode/emoji/emoji-test.txt"
+        path: decodeURIComponent(Qt.resolvedUrl("../data/emoji.tsv").toString().replace("file://", ""))
         printErrors: false
         onLoaded: root.parse(text())
     }

@@ -27,7 +27,7 @@ Singleton {
     readonly property color ok: "{{colors.ok}}"
 
     readonly property string font: "{{fonts.ui}}"
-    // Nerd Font build of the same face, for icons (weather, media, keyboard)
+    // Only the Nerd Font symbols (ttf-nerd-fonts-symbols-mono, a few MB), for icons
     readonly property string iconFont: "{{fonts.icons}}"
 
     readonly property QtObject size: QtObject {

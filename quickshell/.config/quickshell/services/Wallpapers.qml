@@ -5,7 +5,7 @@ import Quickshell
 import Quickshell.Io
 
 // Front end for ~/.local/bin/frame-wallpaper (wallpaper package), which owns the state
-// and starts linux-wallpaperengine, mpvpaper or swaybg.
+// and starts linux-wallpaperengine or mpvpaper; still pictures are drawn by wallpapers/Backdrop.qml.
 //
 // items:    [{ id, title, kind ("scene" | "video" | "web" | "image"), source ("workshop" | "file"),
 //              tags, path, preview }] – only what the current backend can show

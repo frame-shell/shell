@@ -254,6 +254,74 @@ Scope {
         }
     }
 
+    // ── Idle and sleep (what hypridle used to do) ────────────
+
+    // Lock after Config.idleLockMinutes without input; Stay awake in the control center
+    // (an idle inhibitor) and video players that inhibit idle hold it off
+    IdleMonitor {
+        enabled: Config.idleLockMinutes > 0
+        timeout: Config.idleLockMinutes * 60
+        respectInhibitors: true
+        onIsIdleChanged: if (isIdle) root.lock()
+    }
+
+    // Screens off a while later, on again with the first input
+    IdleMonitor {
+        enabled: Config.idleScreenOffMinutes > 0
+        timeout: Config.idleScreenOffMinutes * 60
+        respectInhibitors: true
+        onIsIdleChanged: root.dpms(!isIdle)
+    }
+
+    function dpms(on) {
+        Quickshell.execDetached(["hyprctl", "dispatch", `hl.dsp.dpms({ action = "${on ? "on" : "off"}" })`]);
+    }
+
+    // logind's signals: PrepareForSleep before suspend (lock first) and after it (screens
+    // on), Lock from `loginctl lock-session`. gdbus comes with glib2.
+    Process {
+        running: true
+        command: ["gdbus", "monitor", "--system", "--dest", "org.freedesktop.login1"]
+        stdout: SplitParser {
+            onRead: line => {
+                if (line.includes("PrepareForSleep (true")) {
+                    root.lock();
+                    sleepRelease.restart();
+                } else if (line.includes("PrepareForSleep (false")) {
+                    root.dpms(true);
+                    sleepDelay.running = true;
+                } else if (/\.Session\.Lock \(\)/.test(line)) {
+                    root.lock();
+                }
+            }
+        }
+    }
+
+    // Holds suspend back (a delay lock, a few seconds at most) until the lockscreen is up,
+    // so waking up never shows the desktop for a moment
+    Process {
+        id: sleepDelay
+        running: true
+        command: ["systemd-inhibit", "--what=sleep", "--mode=delay", "--who=frameshell",
+            "--why=lock the screen before sleep", "sleep", "infinity"]
+    }
+
+    // Lets the system sleep once the lock is engaged, or after 2 s whatever happens
+    Timer {
+        id: sleepRelease
+        interval: 100
+        repeat: true
+        property int waited: 0
+        onTriggered: {
+            waited += interval;
+            if (sessionLock.locked || waited >= 2000) {
+                stop();
+                waited = 0;
+                sleepDelay.running = false;
+            }
+        }
+    }
+
     IpcHandler {
         target: "lock"
 
