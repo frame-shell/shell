@@ -88,7 +88,13 @@ ShellRoot {
                     root.pending = "";
                     Greetd.respond(p);
                 } else {
+                    // A further question after the password (expired password, second
+                    // factor): the field has to take an answer again
+                    // (busy means something was already sent, so show what PAM wants now)
+                    if (root.busy && message !== "")
+                        root.status = message.toLowerCase();
                     root.asked = true;
+                    root.busy = false;
                 }
             } else if (message !== "") {
                 root.status = message.toLowerCase();
@@ -113,8 +119,18 @@ ShellRoot {
 
         function onError(error) {
             root.busy = false;
+            root.pending = "";
             root.status = String(error).toLowerCase();
+            // The session is gone after an error; start a new one so Enter works again
+            retry.restart();
         }
+    }
+
+    // Not straight away: when greetd itself is the problem, this would spin
+    Timer {
+        id: retry
+        interval: 2000
+        onTriggered: root.begin()
     }
 
     Component.onCompleted: appeared = true

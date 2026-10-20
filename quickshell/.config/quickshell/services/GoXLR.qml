@@ -87,8 +87,14 @@ Singleton {
         const list = [];
         const next = {};
         const all = {};
-        for (const name of Object.keys(volumes))
-            all[name.toLowerCase()] = Math.round((volumes[name] ?? 0) / 255 * 100);
+        const now = Date.now();
+        for (const name of Object.keys(volumes)) {
+            const key = name.toLowerCase();
+            // Set from here a moment ago: a poll answered before the device took the new
+            // value would make the slider jump back
+            all[key] = now - (setAt[key] ?? 0) < 600 && root.volumes[key] !== undefined
+                ? root.volumes[key] : Math.round((volumes[name] ?? 0) / 255 * 100);
+        }
         if (JSON.stringify(all) !== JSON.stringify(root.volumes))
             root.volumes = all;
         for (const letter of Object.keys(status).sort()) {
@@ -124,14 +130,35 @@ Singleton {
 
     // Sets a channel's volume (0..100) over the API, e.g. "System" on a Mini, which has no
     // fader for it. Shown right away; the next poll confirms.
+    // A slider sends a value on every mouse move; only the newest one goes out, every 60 ms
     function setChannelVolume(channel, level) {
         if (serial === "")
             return;
         level = Math.max(0, Math.min(100, Math.round(level)));
         const name = channel.charAt(0).toUpperCase() + channel.slice(1).toLowerCase();
-        volumes = Object.assign({}, volumes, { [name.toLowerCase()]: level });
-        const body = JSON.stringify({ Command: [serial, { SetVolume: [name, Math.round(level / 100 * 255)] }] });
-        request("POST", "/api/command", body, () => refresh());
+        const key = name.toLowerCase();
+        volumes = Object.assign({}, volumes, { [key]: level });
+        setAt = Object.assign({}, setAt, { [key]: Date.now() });
+        pendingVolumes = Object.assign({}, pendingVolumes, { [name]: level });
+        if (!sendVolumes.running)
+            sendVolumes.start();
+    }
+
+    // When each channel was last set from the shell (ms), see parse()
+    property var setAt: ({})
+    property var pendingVolumes: ({})
+
+    Timer {
+        id: sendVolumes
+        interval: 60
+        onTriggered: {
+            const pending = root.pendingVolumes;
+            root.pendingVolumes = {};
+            for (const name of Object.keys(pending)) {
+                const body = JSON.stringify({ Command: [root.serial, { SetVolume: [name, Math.round(pending[name] / 100 * 255)] }] });
+                root.request("POST", "/api/command", body, () => {});
+            }
+        }
     }
 
     function stepSystem(delta) {

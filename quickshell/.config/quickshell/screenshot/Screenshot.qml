@@ -66,7 +66,8 @@ Scope {
     function stamp() {
         const d = new Date();
         const p = n => String(n).padStart(2, "0");
-        return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
+        // Milliseconds too: two shots in the same second must not share a file
+        return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}-${String(d.getMilliseconds()).padStart(3, "0")}`;
     }
 
     // A rectangle in layout coordinates; the overlays leave first so they are not in the picture
@@ -81,6 +82,9 @@ Scope {
     }
 
     function start(args) {
+        // One shot at a time: a second one would change the file name under the first
+        if (captureDelay.running || grimProc.running)
+            return;
         pendingFile = `${folder}/screenshot-${stamp()}.png`;
         pendingArgs = args;
         open = false;

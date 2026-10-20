@@ -44,7 +44,7 @@ Singleton {
     // Layout point (where things are on the screens right now) → canvas point
     function toCanvas(x, y) {
         const m = monitorAt(x, y);
-        return m ? { x: x + m.camera.x, y: y + m.camera.y } : { x, y };
+        return m ? { x: x + m.camera.x, y: y + m.camera.y, monitor: m.name } : { x, y, monitor: "" };
     }
 
     // Where a monitor's view is on the canvas
@@ -81,9 +81,16 @@ Singleton {
         return String(address).replace(/[^0-9a-fx]/gi, "");
     }
 
-    // Puts canvas point x, y in the middle of the screen whose canvas it is on
-    function lookAt(x, y) {
-        run(`frame_canvas.look_at(${Math.round(x)}, ${Math.round(y)})`);
+    // Monitor names go into Lua code, so only what a name can contain
+    function monitorArg(monitor) {
+        return `"${String(monitor ?? "").replace(/[^\w-]/g, "")}"`;
+    }
+
+    // Puts canvas point x, y in the middle of a screen: the named monitor's, or (no name)
+    // the one whose canvas holds the point. Canvases overlap once cameras differ, so
+    // callers that know the monitor pass it.
+    function lookAt(x, y, monitor) {
+        run(`frame_canvas.look_at(${Math.round(x)}, ${Math.round(y)}, ${monitorArg(monitor)})`);
     }
 
     // Focuses the window and brings it to the middle of its screen (overview)
@@ -93,8 +100,8 @@ Singleton {
 
     // Puts the window's top left corner at canvas point x, y; on another monitor's canvas
     // it moves there (overview drag)
-    function moveTo(address, x, y) {
-        run(`frame_canvas.move_to("${addr(address)}", ${Math.round(x)}, ${Math.round(y)})`);
+    function moveTo(address, x, y, monitor) {
+        run(`frame_canvas.move_to("${addr(address)}", ${Math.round(x)}, ${Math.round(y)}, ${monitorArg(monitor)})`);
     }
 
     // Fullscreen on the screen the window is on (overview, F)

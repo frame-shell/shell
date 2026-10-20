@@ -7,7 +7,7 @@ import qs.config
 import qs.services
 
 // Hotkey overlay on the focused screen. Hyprland opens it after Super was held for
-// three seconds and closes it on release (hypr/frame/hotkeys.lua); also
+// 1.5 seconds and closes it on release (hypr/frame/hotkeys.lua); also
 // `qs ipc call hotkeys toggle`. It takes no keyboard focus, so Super stays with Hyprland.
 Scope {
     id: root

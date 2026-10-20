@@ -220,7 +220,7 @@ Scope {
         } else {
             // Hyprland thinks in canvas coordinates
             const c = CanvasLayout.toCanvas(x, y);
-            CanvasLayout.lookAt(c.x, c.y);
+            CanvasLayout.lookAt(c.x, c.y, c.monitor);
             close(x, y);
         }
     }
@@ -260,7 +260,7 @@ Scope {
     // The window's top left corner on the map → canvas coordinates of the screen it is over
     function sendDrag() {
         const c = CanvasLayout.toCanvas(drag.x + 1, drag.y + 1);
-        CanvasLayout.moveTo(drag.address, c.x, c.y);
+        CanvasLayout.moveTo(drag.address, c.x, c.y, c.monitor);
     }
 
     function dragEnd() {

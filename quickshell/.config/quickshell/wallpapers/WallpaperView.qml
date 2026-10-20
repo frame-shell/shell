@@ -322,7 +322,7 @@ Item {
 
                                         Image {
                                             anchors.fill: parent
-                                            source: tile.modelData.preview ? `file://${tile.modelData.preview}` : ""
+                                            source: tile.modelData.preview ? "file://" + tile.modelData.preview.split("/").map(encodeURIComponent).join("/") : ""
                                             sourceSize: Qt.size(480, 270)
                                             fillMode: Image.PreserveAspectCrop
                                             asynchronous: true

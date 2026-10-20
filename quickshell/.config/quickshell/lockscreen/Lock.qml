@@ -41,6 +41,10 @@ Scope {
     property string loginScreen: ""
 
     function lock() {
+        // A real lock (Super+L, hypridle, before sleep) wins over a running preview,
+        // including one whose unlock animation is still playing
+        if (previewing || previewMode)
+            cancelPreview();
         if (active)
             return;
         previewMode = false;
@@ -99,10 +103,26 @@ Scope {
         exitDelay.restart();
     }
 
+    // Drops a preview at once, without its unlock animation
+    function cancelPreview() {
+        previewEnd.stop();
+        release.stop();
+        exitDelay.stop();
+        fallback.stop();
+        capturing = false;
+        previewing = false;
+        previewMode = false;
+        hidingForLock = false;
+        lockContext.reset();
+    }
+
     Timer {
         id: previewEnd
         interval: 4000
         onTriggered: {
+            // Only ever ends a preview: a real lock is released by the password alone
+            if (!root.previewing || sessionLock.locked)
+                return;
             lockContext.unlocking = true;
             release.restart();
         }
@@ -133,6 +153,7 @@ Scope {
         id: release
         interval: Theme.anim.slow
         onTriggered: {
+            previewEnd.stop();
             sessionLock.locked = false;
             root.previewing = false;
             root.previewMode = false;

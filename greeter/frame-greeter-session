@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 # frameshell greeter session for greetd: the lockscreen's look as the login screen.
 # Quickshell draws it (greeter/shell.qml); the compositor underneath is the small one
 # CachyOS ships with noctalia-greeter, or cage when that is missing. Installed by
@@ -7,14 +7,23 @@ set -u
 
 DIR="${FRAME_GREETER_DIR:-/usr/share/frameshell/greeter}"
 
-# Nothing may paint the VT; the compositor logs to syslog through greetd
-exec >/dev/null 2>&1
+# Nothing may paint the VT; what the greeter prints goes to the journal instead
+# (journalctl -t frame-greeter), so a broken start can be looked into
+if command -v logger >/dev/null 2>&1; then
+    exec > >(logger -t frame-greeter) 2>&1
+else
+    exec >/dev/null 2>&1
+fi
 
-# greetd's PAM session has no runtime dir for the greeter user
-XDG_RUNTIME_DIR="/tmp/frameshell-greeter-$(id -u)"
+# pam_systemd usually gives the greeter /run/user/<uid>; without it, a fresh private
+# folder. Never a fixed name in /tmp: another user could create it first and sit
+# between the greeter and its compositor.
+if [ -z "${XDG_RUNTIME_DIR:-}" ] || [ ! -d "$XDG_RUNTIME_DIR" ] || [ ! -O "$XDG_RUNTIME_DIR" ]; then
+    XDG_RUNTIME_DIR=$(mktemp -d /tmp/frameshell-greeter.XXXXXX) || exit 1
+fi
+chmod 700 "$XDG_RUNTIME_DIR" || exit 1
 export XDG_RUNTIME_DIR
-mkdir -p "$XDG_RUNTIME_DIR"
-chmod 700 "$XDG_RUNTIME_DIR"
+echo "frameshell greeter: runtime dir $XDG_RUNTIME_DIR, files ${FRAME_GREETER_DIR:-/usr/share/frameshell/greeter}"
 export XDG_CACHE_HOME="$XDG_RUNTIME_DIR/cache"
 export XDG_CONFIG_HOME="$XDG_RUNTIME_DIR/config"
 export XDG_DATA_HOME="$XDG_RUNTIME_DIR/data"
@@ -24,7 +33,8 @@ export WLR_LOG="${WLR_LOG:-error}"
 unset WAYLAND_DISPLAY
 
 if [ -x /usr/bin/noctalia-greeter-compositor ]; then
-    export GREETER_BIN=/usr/bin/qs
+    GREETER_BIN=$(command -v qs || echo /usr/bin/qs)
+    export GREETER_BIN
     if command -v dbus-run-session >/dev/null 2>&1; then
         exec dbus-run-session -- /usr/bin/noctalia-greeter-compositor -- -p "$DIR"
     fi
@@ -32,4 +42,5 @@ if [ -x /usr/bin/noctalia-greeter-compositor ]; then
 elif command -v cage >/dev/null 2>&1; then
     exec cage -s -- qs -p "$DIR"
 fi
+echo "frameshell greeter: neither noctalia-greeter-compositor nor cage found"
 exit 1

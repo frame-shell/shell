@@ -79,7 +79,7 @@ Row {
         MouseArea {
             anchors.fill: parent
             cursorShape: Qt.PointingHandCursor
-            onClicked: mouse => CanvasLayout.lookAt(root.b.x + (mouse.x - root.offX) / root.k, root.b.y + (mouse.y - root.offY) / root.k)
+            onClicked: mouse => CanvasLayout.lookAt(root.b.x + (mouse.x - root.offX) / root.k, root.b.y + (mouse.y - root.offY) / root.k, root.mon?.name ?? "")
             onWheel: wheel => {
                 const step = wheel.angleDelta.y > 0 ? -160 : 160;
                 const name = root.mon?.name ?? "";

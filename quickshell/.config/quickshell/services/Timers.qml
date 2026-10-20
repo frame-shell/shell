@@ -135,7 +135,9 @@ Singleton {
     // The sound runs as a tracked process, so done or snooze can cut it off at once
     function playSound() {
         soundProc.running = false;
-        soundProc.command = ["pw-play", sound];
+        // Nothing to play without pw-play or the sound theme; exec keeps it one process,
+        // so stopping it still stops the sound
+        soundProc.command = ["sh", "-c", 'command -v pw-play >/dev/null && test -f "$1" && exec pw-play "$1"', "timer-sound", sound];
         soundProc.running = true;
     }
 

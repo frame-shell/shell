@@ -70,10 +70,16 @@ Item {
         property bool last: false
         // idle and route settle with a delay too: while PipeWire relinks the stream, the
         // row would otherwise dim and lose its chip for a moment
+        // No bindings on idle and route: the first change would follow them at once and
+        // skip the delay; they start from the live values and then only the timer sets them
         readonly property bool idleNow: Audio.isIdle(node)
-        property bool idle: idleNow
+        property bool idle: false
         readonly property string routeNow: Audio.routeOf(node)
-        property string route: routeNow
+        property string route: ""
+        Component.onCompleted: {
+            idle = idleNow;
+            route = routeNow;
+        }
         onIdleNowChanged: idleSettle.restart()
         onRouteNowChanged: {
             if (routeNow !== "")

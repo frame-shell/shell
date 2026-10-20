@@ -399,19 +399,34 @@ Item {
 
                     // Longer text: Claude's answer, a clipboard entry
                     // The first lines of a text file (file search), read when it is selected
+                    // A process that is still running ignores running = true, so a quick ↓ would
+                    // leave the next file without a preview and show the last one's text: each
+                    // run remembers its file, late output is dropped and the current one follows
                     Process {
                         id: textPeek
                         property string path: root.selected?.textPreview ?? ""
+                        property string startedFor: ""
                         property string snippet: ""
+                        function start() {
+                            if (path === "" || running)
+                                return;
+                            startedFor = path;
+                            command = ["head", "-c", "3000", path];
+                            running = true;
+                        }
                         onPathChanged: {
                             snippet = "";
-                            if (path !== "") {
-                                command = ["head", "-c", "3000", path];
-                                running = true;
-                            }
+                            start();
                         }
+                        onExited: Qt.callLater(() => {
+                            if (textPeek.startedFor !== textPeek.path)
+                                textPeek.start();
+                        })
                         stdout: StdioCollector {
-                            onStreamFinished: textPeek.snippet = this.text.split("\n").slice(0, 28).join("\n")
+                            onStreamFinished: {
+                                if (textPeek.startedFor === textPeek.path)
+                                    textPeek.snippet = this.text.split("\n").slice(0, 28).join("\n");
+                            }
                         }
                     }
 
@@ -439,26 +454,36 @@ Item {
 
                     // A thumbnail for a video or PDF (file search), made when it is selected and
                     // kept in $XDG_RUNTIME_DIR/qs-thumbs
+                    // Same pattern as textPeek: one run at a time, results only for the file
+                    // that is still selected
                     Process {
                         id: thumbPeek
                         property string source: (root.selected?.thumbSource || root.selected?.pdfSource) ?? ""
-                        property bool isPdf: (root.selected?.pdfSource ?? "") !== ""
-                        property string file: ""
+                        property string startedFor: ""
+                        property string startedFile: ""
                         property string ready: ""
-                        onSourceChanged: {
-                            ready = "";
-                            if (source === "")
+                        function start() {
+                            if (source === "" || running)
                                 return;
-                            file = `${Quickshell.env("XDG_RUNTIME_DIR")}/qs-thumbs/${Qt.md5(source)}.png`;
-                            command = ["sh", "-c", isPdf
+                            // Read here, not from a binding that may still hold the last file's value
+                            const pdf = (root.selected?.pdfSource ?? "") === source;
+                            startedFor = source;
+                            startedFile = `${Quickshell.env("XDG_RUNTIME_DIR")}/qs-thumbs/${Qt.md5(source)}.png`;
+                            command = ["sh", "-c", pdf
                                 ? 'mkdir -p "$(dirname "$2")" && { [ -s "$2" ] || { pdftoppm -png -r 40 -f 1 -l 1 -singlefile "$1" "${2%.png}"; }; }'
                                 : 'mkdir -p "$(dirname "$2")" && { [ -s "$2" ] || ffmpegthumbnailer -i "$1" -o "$2" -s 640 -q 8; }',
-                                "thumb", source, file];
+                                "thumb", source, startedFile];
                             running = true;
                         }
+                        onSourceChanged: {
+                            ready = "";
+                            start();
+                        }
                         onExited: code => {
-                            if (code === 0 && source !== "")
-                                ready = file;
+                            if (code === 0 && startedFor === source && source !== "")
+                                ready = startedFile;
+                            else if (startedFor !== source)
+                                Qt.callLater(start);
                         }
                     }
 
@@ -480,7 +505,8 @@ Item {
                             id: previewImage
                             anchors.fill: parent
                             anchors.margins: 1
-                            source: parent.shown !== "" ? `file://${parent.shown}` : ""
+                            // Encoded per path part: a "#" or "?" in a file name would end the URL early
+                            source: parent.shown !== "" ? "file://" + parent.shown.split("/").map(encodeURIComponent).join("/") : ""
                             // Big screenshots are scaled down once on load, not on every paint
                             sourceSize.width: 1200
                             fillMode: Image.PreserveAspectFit

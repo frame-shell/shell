@@ -69,7 +69,12 @@ local function view_of(ws)
         return nil
     end
     local s = (m.scale and m.scale > 0) and m.scale or 1
-    return { x = m.x, y = m.y, w = m.width / s, h = m.height / s }
+    local w, h = m.width / s, m.height / s
+    -- A turned screen (transform 1, 3, 5, 7) is as wide as its mode is high
+    if (tonumber(m.transform) or 0) % 2 == 1 then
+        w, h = h, w
+    end
+    return { x = m.x, y = m.y, w = w, h = h }
 end
 
 -- Every monitor with its visible workspace, the view in layout coordinates and its camera
@@ -88,8 +93,17 @@ local function views()
     return out
 end
 
--- The view whose canvas has global point gx, gy; otherwise the nearest one
-local function view_at(gx, gy)
+-- The view of the named monitor; without a name the one whose canvas has global point
+-- gx, gy, otherwise the nearest one. Canvases overlap as soon as two cameras differ by
+-- less than a screen, so callers that know the monitor (overview, minimap) name it.
+local function view_at(gx, gy, name)
+    if name and name ~= "" then
+        for _, v in ipairs(views()) do
+            if v.monitor.name == name then
+                return v
+            end
+        end
+    end
     local best, best_d
     for _, v in ipairs(views()) do
         local x1, y1 = v.x + v.cam.x, v.y + v.cam.y
@@ -101,6 +115,15 @@ local function view_at(gx, gy)
         end
     end
     return best
+end
+
+-- The view whose screen shows layout point lx, ly (where a window is right now)
+local function view_on_screen(lx, ly)
+    for _, v in ipairs(views()) do
+        if lx >= v.x and lx < v.x + v.w and ly >= v.y and ly < v.y + v.h then
+            return v
+        end
+    end
 end
 
 local function canvas_windows(ws)
@@ -164,13 +187,19 @@ end
 -- ── Moving the view ──────────────────────────────────────────
 
 -- A fullscreen window pins the view; the overview and the minimap end it first
+local function is_fullscreen(w)
+    local f = w.fullscreen
+    return f == true or (type(f) == "number" and f > 0)
+end
+
+-- Ends fullscreen on that workspace only, never on the focused window of another one
 local function leave_fullscreen(ws)
-    if ws and ws.has_fullscreen then
-        local fw = ws.fullscreen_window
-        if fw then
-            run(hl.dsp.window.fullscreen({ window = sel(fw) }))
-        else
-            run(hl.dsp.window.fullscreen())
+    if not (ws and ws.has_fullscreen) then
+        return
+    end
+    for _, w in ipairs(hl.get_workspace_windows(ws) or {}) do
+        if is_fullscreen(w) then
+            run(hl.dsp.window.fullscreen({ window = sel(w) }))
         end
     end
 end
@@ -239,8 +268,8 @@ local function pan_on(name, dx, dy)
 end
 
 -- Puts global canvas point x, y in the middle of the screen whose canvas it is on
-local function look_at(x, y)
-    local v = view_at(x, y)
+local function look_at(x, y, name)
+    local v = view_at(x, y, name)
     if not v then
         return
     end
@@ -317,12 +346,12 @@ end
 
 -- Dragged in the overview: puts the window's top left corner at global canvas point x, y.
 -- A point on another monitor's canvas moves the window to that monitor first.
-local function move_to(address, x, y)
+local function move_to(address, x, y, name)
     local w, own = find_window(address)
     if not w then
         return
     end
-    local target = view_at(x + w.size.x / 2, y + w.size.y / 2) or own
+    local target = view_at(x + w.size.x / 2, y + w.size.y / 2, name) or own
     if target.ws.id ~= own.ws.id then
         run(hl.dsp.window.move({ workspace = tostring(target.ws.id), follow = false, window = sel(w) }))
     end
@@ -337,8 +366,8 @@ local function fullscreen_on(address)
     if not w then
         return
     end
-    local gx, gy = w.at.x + own.cam.x + w.size.x / 2, w.at.y + own.cam.y + w.size.y / 2
-    local target = view_at(gx, gy) or own
+    -- Where the window is on the screens right now decides, not the (overlapping) canvases
+    local target = view_on_screen(w.at.x + w.size.x / 2, w.at.y + w.size.y / 2) or own
     if target.ws.id ~= own.ws.id then
         run(hl.dsp.window.move({ workspace = tostring(target.ws.id), follow = false, window = sel(w) }))
         w = find_window(address) or w
@@ -494,6 +523,16 @@ end
 
 -- Before `frame layout tiling`: big windows tile again, small ones (dialogs) keep floating
 local function release()
+    -- Every canvas back to its start first, so the windows that keep floating (dialogs)
+    -- are on screen again and not where some camera left them
+    for _, ws in ipairs(hl.get_workspaces() or {}) do
+        local c = cams[tostring(ws.id)]
+        if c and (c.x ~= 0 or c.y ~= 0) and not ws.special then
+            for _, w in ipairs(canvas_windows(ws)) do
+                run(hl.dsp.window.move({ x = c.x, y = c.y, relative = true, window = sel(w) }))
+            end
+        end
+    end
     for _, w in ipairs(hl.get_windows() or {}) do
         local v = view_of(w.workspace)
         if w.mapped and w.floating and not w.pinned and v and (w.size.x > v.w * 0.3 or w.size.y > v.h * 0.3) then

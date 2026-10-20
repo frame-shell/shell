@@ -18,7 +18,12 @@ ShellRoot {
     // Singletons only come to life when something uses them; the Spotify one must listen
     // for the Spicetify extension from the start, not from the first "s" in the launcher
     Scope {
-        Component.onCompleted: Spotify.refresh()
+        Component.onCompleted: {
+            Spotify.refresh();
+            // A shell that died while the screen was locked left the wallpaper frozen
+            // (frame-wallpaper pause); this one lets it run again
+            Quickshell.execDetached(["sh", "-c", 'w="$HOME/.local/bin/frame-wallpaper"; [ -x "$w" ] && "$w" resume-if-paused']);
+        }
     }
 
     Lock {
@@ -75,7 +80,7 @@ ShellRoot {
 
     SpotifyPopup {}
 
-    // Hold Super for three seconds (hypr/frame/hotkeys.lua); closed while locked or
+    // Hold Super for 1.5 seconds (hypr/frame/hotkeys.lua); closed while locked or
     // while Super is busy with the canvas overview
     HotkeyOverlay {
         id: hotkeys

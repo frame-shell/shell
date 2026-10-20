@@ -19,7 +19,7 @@ Item {
         id: image
         anchors.fill: parent
         source: root.icon === "" ? ""
-            : /^(\/|file:|https?:|image:)/.test(root.icon) ? (root.icon.startsWith("/") ? `file://${root.icon}` : root.icon)
+            : /^(\/|file:|https?:|image:)/.test(root.icon) ? (root.icon.startsWith("/") ? "file://" + root.icon.split("/").map(encodeURIComponent).join("/") : root.icon)
             : Quickshell.iconPath(root.icon, true)
         sourceSize: Qt.size(root.size * 2, root.size * 2)
         fillMode: Image.PreserveAspectFit

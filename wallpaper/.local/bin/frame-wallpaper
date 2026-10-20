@@ -23,7 +23,7 @@
 #                                             let them run again (Wallpaper Engine is restarted)
 #   frame-wallpaper stop
 #
-# Not tested on a real system yet. linux-wallpaperengine flags follow its README.
+# linux-wallpaperengine flags follow its README.
 set -euo pipefail
 
 STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/frameshell"
@@ -78,7 +78,9 @@ kind_of() {
     local path=$1 kind
     if [[ -d $path ]]; then
         if [[ -f $path/project.json ]]; then
-            kind="$(jq -r '(.type // (if .dependency or .preset then "preset" else "scene" end)) | ascii_downcase' "$path/project.json")"
+            # A broken project.json counts as unknown, not as an empty kind
+            kind="$(jq -r '(.type // (if .dependency or .preset then "preset" else "scene" end)) | ascii_downcase' "$path/project.json" 2>/dev/null)" || kind=unknown
+            [[ -n $kind ]] || kind=unknown
             if [[ $kind == scene && ! -f $path/scene.pkg && ! -f $path/scene.json ]]; then
                 [[ -f $path/gifscene.pkg ]] && kind=gif || kind=unknown
             fi
@@ -99,7 +101,7 @@ kind_of() {
 allowed() {
     local backend=$1 path=$2 kind=$3
     case "$backend" in
-        both) [[ $kind == scene || $kind == video || $kind == web || $kind == image ]] ;;
+        both) [[ $kind == scene || $kind == video || $kind == image ]] ;;
         mpv) [[ ! -d $path && ($kind == video || $kind == image) ]] ;;
         image) [[ $kind == image ]] ;;
         *) return 1 ;;
@@ -167,6 +169,9 @@ all_backend_pids() {
 }
 
 stop_backends() {
+    # Stopped while the screen was locked: they have to run to take the SIGTERM
+    local pid
+    for pid in $(all_backend_pids); do kill -CONT "$pid" 2>/dev/null || true; done
     pkill -f '(^|/)linux-wallpaperengine( |$)' 2>/dev/null || true
     pkill -x mpvpaper 2>/dev/null || true
     pkill -x swaybg 2>/dev/null || true
@@ -185,7 +190,8 @@ stop_old_backends() {
         sleep 0.1
     done
     sleep 0.6
-    for pid in $old; do kill "$pid" 2>/dev/null || true; done
+    # A paused (stopped) process only takes SIGTERM once it runs again
+    for pid in $old; do kill -CONT "$pid" 2>/dev/null || true; kill "$pid" 2>/dev/null || true; done
 }
 
 # Every monitor has a background layer from a process that is not in the old set
@@ -308,7 +314,7 @@ cmd_set() {
     [[ -e $path ]] || die "not found: $path"
     path="$(readlink -f "$path")"
     kind="$(kind_of "$path")"
-    [[ $kind != unknown ]] || die "not a wallpaper: $path"
+    [[ -n $kind && $kind != unknown ]] || die "not a wallpaper: $path"
     if [[ $screen == "*" ]]; then
         update --arg p "$path" --arg k "$kind" '.screens = { "*": { path: $p, kind: $k } }'
     else

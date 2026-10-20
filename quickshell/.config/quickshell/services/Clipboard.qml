@@ -46,6 +46,11 @@ Singleton {
         const pictures = entries.filter(e => e.image).slice(0, 40);
         if (pictures.length === 0)
             return;
+        // A run still going ignores running = true; it starts once more when done
+        if (thumbs.running) {
+            thumbs.again = true;
+            return;
+        }
         thumbs.command = ["sh", "-c", `
             dir=$1; shift
             mkdir -p "$dir"
@@ -60,14 +65,29 @@ Singleton {
             for f in "$dir"/*; do
                 [ -e "$f" ] || continue
                 case "$keep" in *" $(basename "$f") "*) ;; *) rm -f "$f" ;; esac
+            done
+            # The files that are really there, for the shell to mark
+            for f in "$dir"/*; do
+                [ -s "$f" ] && printf '%s\\n' "$f"
             done`, "clip-thumbs", previewDir].concat(pictures.map(e => e.line));
         thumbs.running = true;
     }
 
     Process {
         id: thumbs
+        property bool again: false
+        stdout: StdioCollector {
+            onStreamFinished: {
+                // Only entries whose picture exists get a preview (older than the newest 40 do not)
+                const have = text.split("\n").filter(f => f !== "");
+                root.entries = root.entries.map(e => e.image && have.includes(e.file) ? Object.assign({}, e, { preview: e.file }) : e);
+            }
+        }
         onExited: {
-            root.entries = root.entries.map(e => e.image ? Object.assign({}, e, { preview: e.file }) : e);
+            if (again) {
+                again = false;
+                Qt.callLater(root.decodePictures);
+            }
         }
     }
 
