@@ -17,6 +17,7 @@ Item {
     signal closeRequested()
     signal lockRequested()
     signal wallpapersRequested()
+    signal keyboardRequested()
 
     // Reboot and shutdown wait for a second click
     property string armed: ""
@@ -251,20 +252,39 @@ Item {
             label: "toggles"
             implicitHeight: toggleGrid.implicitHeight + 36
 
-            // Opens the separate wallpaper app (Super+W)
-            TuiButton {
-                anchors { right: parent.right; top: parent.top; topMargin: -16 - height / 2 }
-                implicitWidth: wallpaperLabel.implicitWidth + 20
-                implicitHeight: 24
-                color: Theme.bg
-                onClicked: root.wallpapersRequested()
+            // Open the separate keyboard (Super+K) and wallpaper (Super+W) apps
+            Row {
+                anchors { right: parent.right; top: parent.top; topMargin: -16 - 12 }
+                spacing: 8
 
-                Label {
-                    id: wallpaperLabel
-                    anchors.centerIn: parent
-                    text: "wallpapers ›"
-                    color: Theme.secondary
-                    font.pixelSize: 14
+                TuiButton {
+                    implicitWidth: keyboardLabel.implicitWidth + 20
+                    implicitHeight: 24
+                    color: Theme.bg
+                    onClicked: root.keyboardRequested()
+
+                    Label {
+                        id: keyboardLabel
+                        anchors.centerIn: parent
+                        text: "keyboard ›"
+                        color: Theme.secondary
+                        font.pixelSize: 14
+                    }
+                }
+
+                TuiButton {
+                    implicitWidth: wallpaperLabel.implicitWidth + 20
+                    implicitHeight: 24
+                    color: Theme.bg
+                    onClicked: root.wallpapersRequested()
+
+                    Label {
+                        id: wallpaperLabel
+                        anchors.centerIn: parent
+                        text: "wallpapers ›"
+                        color: Theme.secondary
+                        font.pixelSize: 14
+                    }
                 }
             }
 

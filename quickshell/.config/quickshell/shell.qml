@@ -4,6 +4,7 @@ import qs.bar
 import qs.canvas
 import qs.controlcenter
 import qs.hotkeys
+import qs.keyboard
 import qs.launcher
 import qs.lockscreen
 import qs.media
@@ -35,6 +36,7 @@ ShellRoot {
             launcher.hide();
             history.hide();
             wallpapers.hide();
+            keyboard.hide();
             hotkeys.hide();
             overview.close();
         }
@@ -56,6 +58,7 @@ ShellRoot {
         id: controlCenter
         onLockRequested: lock.lock()
         onWallpapersRequested: wallpapers.show()
+        onKeyboardRequested: keyboard.show()
     }
 
     Launcher {
@@ -65,6 +68,11 @@ ShellRoot {
     // Separate wallpaper app (Super+W)
     WallpaperApp {
         id: wallpapers
+    }
+
+    // AULA F75 lighting, Fn keys and per-key colors (Super+K, keyboard package)
+    KeyboardApp {
+        id: keyboard
     }
 
     // Popups step aside while a panel on the right is open

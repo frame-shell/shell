@@ -36,6 +36,7 @@ take("SUPER + SPACE", shell("launcher", "toggle"), { description = "frame shell 
 take("SUPER + C", shell("controlcenter", "toggle"), { description = "frame shell · control center" })
 take("SUPER + V", shell("launcher", "clipboard"), { description = "frame shell · clipboard history" })
 take("SUPER + W", shell("wallpapers", "toggle"), { description = "frame shell · wallpapers" })
+take("SUPER + K", shell("keyboard", "toggle"), { description = "frame shell · keyboard (AULA F75)" })
 take("SUPER + L", shell("lock", "lock"), { description = "frame shell · lock" })
 -- Ctrl+Alt+Q types an @ (the Windows habit; for a keyboard without a working AltGr).
 -- Hyprland sends AltGr+Q (MOD5) straight to the focused window, so the app sees the

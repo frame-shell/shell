@@ -60,4 +60,11 @@ Singleton {
 
     // Timers and alarms (t, a): how long snooze waits, in minutes
     readonly property int snoozeMinutes: 10
+
+    // ── Keyboard (AULA F75, Super+K) ─────────────────────────
+
+    // false: the keyboard app only shows what it would send (frame-keyboard dry run).
+    // Set it to true once frame-keyboard works on your board (docs/keyboard.md); the switch
+    // in the app changes it until the shell restarts.
+    readonly property bool keyboardLive: false
 }
