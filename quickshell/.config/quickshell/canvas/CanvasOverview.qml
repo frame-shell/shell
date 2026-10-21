@@ -726,6 +726,36 @@ Scope {
         }
     }
 
+    // The other screens while the overview is open: a click on one of them closes it (the
+    // click goes no further; the next one lands where it was aimed)
+    Variants {
+        model: root.open ? Quickshell.screens.filter(s => s.name !== root.screenName) : []
+
+        PanelWindow {
+            required property var modelData
+
+            screen: modelData
+            visible: root.open
+            color: "transparent"
+            exclusionMode: ExclusionMode.Ignore
+            WlrLayershell.layer: WlrLayer.Overlay
+            WlrLayershell.namespace: "qs-overview-other"
+            WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
+            anchors {
+                top: true
+                bottom: true
+                left: true
+                right: true
+            }
+
+            MouseArea {
+                anchors.fill: parent
+                acceptedButtons: Qt.AllButtons
+                onPressed: root.close()
+            }
+        }
+    }
+
     IpcHandler {
         target: "overview"
 
