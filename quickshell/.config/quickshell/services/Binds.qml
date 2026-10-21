@@ -61,6 +61,21 @@ Singleton {
         return "";
     }
 
+    // A Lua bind without a description only reports "__lua <id>": its key is all there is
+    // to go by, enough for the media and brightness keys
+    function fromKey(key) {
+        const names = [
+            [/audioraisevolume/, "volume up"], [/audiolowervolume/, "volume down"], [/audiomicmute/, "mute the microphone"],
+            [/audiomute/, "mute"], [/audioplay|audiopause/, "play / pause"], [/audionext/, "next track"],
+            [/audioprev/, "previous track"], [/monbrightnessup/, "brightness up"], [/monbrightnessdown/, "brightness down"],
+            [/calculator/, "calculator"]
+        ];
+        for (const [re, text] of names)
+            if (re.test(key))
+                return text;
+        return "";
+    }
+
     function guessGroup(key, text) {
         const t = text.toLowerCase();
         if (key.startsWith("xf86") || key === "print") return "media";
@@ -95,6 +110,7 @@ Singleton {
                 const arg = String(b.arg ?? "").trim();
                 // exec binds read better as the program name
                 label = dispatcher.startsWith("exec") && arg !== "" ? arg.split(/\s+/)[0].replace(/^.*\//, "")
+                    : dispatcher === "__lua" ? fromKey(key) || "lua bind without a description"
                     : pretty(dispatcher, arg) || [dispatcher, arg].filter(s => s !== "").join(" ");
                 group = guessGroup(key, `${dispatcher} ${arg}`);
             }

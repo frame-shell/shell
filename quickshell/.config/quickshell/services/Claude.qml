@@ -9,6 +9,8 @@ import qs.config
 // (`claude -p`, signed in as you). The mode only exists when `claude` is installed and
 // Config.claudeEnabled is on. Nothing is sent while typing, only on Enter.
 // It runs in its own empty folder, so no project's CLAUDE.md or files come along.
+// Hyprland starts qs with the system PATH only, so ~/.local/bin (where the CLI's installer
+// puts `claude`) and the npm folders are added before looking for it.
 Singleton {
     id: root
 
@@ -21,6 +23,8 @@ Singleton {
     readonly property bool busy: proc.running
 
     readonly property string workDir: `${Quickshell.env("HOME")}/.local/state/frameshell/claude`
+    readonly property string withPath: 'export PATH="$HOME/.local/bin:$HOME/.npm-global/bin:$HOME/.local/share/npm/bin:$PATH"; '
+
     readonly property string instructions: "You answer quick questions typed into a desktop launcher. "
         + "Reply in at most three short sentences of plain text, no markdown, no lists. "
         + "Use the language of the question."
@@ -35,8 +39,9 @@ Singleton {
         error = "";
         const model = Config.claudeModel !== "" ? ["--model", Config.claudeModel] : [];
         proc.asked = q;
-        // First line of the output: exit code; the rest: the answer or the error
-        proc.command = ["sh", "-c", 'mkdir -p "$0" && cd "$0" || exit 1; out=$(claude "$@" 2>&1); printf "%s\\n%s" "$?" "$out"',
+        // First line of the output: exit code; the rest: the answer or the error. stdin is
+        // closed, or claude waits 3 s for piped input and prints a warning into the answer.
+        proc.command = ["sh", "-c", withPath + 'mkdir -p "$0" && cd "$0" || exit 1; out=$(claude "$@" 2>&1 </dev/null); printf "%s\\n%s" "$?" "$out"',
             workDir, "-p", "--append-system-prompt", instructions].concat(model).concat([q]);
         proc.running = true;
     }
@@ -60,7 +65,7 @@ Singleton {
     }
 
     Process {
-        command: ["sh", "-c", "command -v claude"]
+        command: ["sh", "-c", root.withPath + "command -v claude"]
         running: true
         onExited: code => root.installed = code === 0
     }

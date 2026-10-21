@@ -14,6 +14,8 @@ Item {
 
     readonly property int unit: 46
     readonly property int gap: 4
+    // Rows per group; long groups get cut, the overlay has to fit on one screen
+    readonly property int maxRows: 8
 
     // [label, key name as Hyprland calls it, width in keys]
     readonly property var keyRows: [
@@ -220,10 +222,11 @@ Item {
             }
         }
 
-        // All binds by group
+        // All binds by group: four columns, two rows of them, so the overlay also fits a
+        // 1080p screen now that the distro's binds carry descriptions too
         GridLayout {
             Layout.fillWidth: true
-            columns: 3
+            columns: 4
             columnSpacing: 22
             rowSpacing: 26
 
@@ -238,7 +241,7 @@ Item {
 
                     Layout.fillWidth: true
                     Layout.alignment: Qt.AlignTop
-                    Layout.preferredWidth: 360
+                    Layout.preferredWidth: 400
                     implicitHeight: groupColumn.implicitHeight + 34
                     label: modelData
                     labelColor: Theme.muted
@@ -250,8 +253,7 @@ Item {
                         spacing: 6
 
                         Repeater {
-                            // Long groups get cut, the overlay has to fit on one screen
-                            model: group.rows.slice(0, 9)
+                            model: group.rows.slice(0, root.maxRows)
 
                             RowLayout {
                                 id: bindRow
@@ -283,8 +285,8 @@ Item {
                         }
 
                         Label {
-                            visible: group.rows.length > 9
-                            text: `+ ${group.rows.length - 9} more`
+                            visible: group.rows.length > root.maxRows
+                            text: `+ ${group.rows.length - root.maxRows} more`
                             color: Theme.frame
                             font.pixelSize: 12
                         }

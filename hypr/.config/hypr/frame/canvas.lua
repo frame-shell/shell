@@ -792,10 +792,11 @@ bind("SUPER + mouse_up", hl.dsp.exec_cmd("qs ipc call overview zoomIn"), "zoom i
 
 -- While the overview is open, Super + mouse must not drag or resize the windows behind
 -- it (Hyprland's mouse binds work through the overlay). The binds are the distro's
--- (CachyOS: config/binds.lua) and come back the same way when the overview closes.
+-- (CachyOS: config/binds.lua) and come back the same way when the overview closes, with
+-- a description for the hotkey overlay (as a Lua bind reports nothing else about itself).
 local DRAG_BINDS = {
-    { "SUPER + mouse:272", hl.dsp.window.drag() },
-    { "SUPER + mouse:273", hl.dsp.window.resize() },
+    { "SUPER + mouse:272", hl.dsp.window.drag(), { description = "windows · drag window" } },
+    { "SUPER + mouse:273", hl.dsp.window.resize(), { description = "windows · resize window" } },
 }
 local function overview(open)
     if open then
