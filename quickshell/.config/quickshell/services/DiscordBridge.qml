@@ -9,7 +9,8 @@ import Quickshell.Wayland
 // One JSON object per line in both directions.
 //
 // Discord → shell:
-//   { type: "message", author, channel, guild, content, avatar, channelId, guildId }
+//   { type: "message", kind: "dm" | "group" | "server", author, channel (group DM: its name), guild, mentioned,
+//     content, avatar, channelId, guildId }
 //   { type: "voice", action: "join" | "leave", user, channel, count, avatar, channelId, watched }
 //   { type: "event", name, guild, channel, location, channelId, guildId }
 //   { type: "call", state: "ringing" | "ended", reason ("accepted" | "declined" | "missed", ended only),
@@ -89,6 +90,17 @@ Singleton {
         });
     }
 
+    // Who wrote where: a DM is just the author, a group DM names the group, a server
+    // channel names server and channel; "@" marks a ping
+    function messageTitle(event) {
+        const ping = event.mentioned ? "@ " : "";
+        if (event.kind === "group")
+            return `${ping}${event.author} · group ${event.channel}`;
+        if (event.kind === "server" || event.guild)
+            return `${ping}${event.author} · ${event.guild} #${event.channel}`;
+        return event.author;
+    }
+
     function handle(event) {
         switch (event.type) {
         case "message":
@@ -97,7 +109,7 @@ Singleton {
                 break;
             Notifications.push({
                 app: "discord",
-                title: event.guild ? `${event.author} · #${event.channel}` : event.author,
+                title: root.messageTitle(event),
                 body: event.content,
                 image: event.avatar ?? "",
                 actions: [{ id: "open", label: "open", style: "" }],
