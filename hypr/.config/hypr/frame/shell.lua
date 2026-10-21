@@ -46,8 +46,15 @@ take("SUPER + comma", shell("settings", "toggle"), { description = "frame shell 
 take("SUPER + L", shell("lock", "lock"), { description = "frame shell · lock" })
 -- Ctrl+Alt+Q types an @ (the Windows habit; for a keyboard without a working AltGr).
 -- Hyprland sends AltGr+Q (MOD5) straight to the focused window, so the app sees the
--- real key and no virtual keyboard shows up as a layout change.
-take("CTRL + ALT + Q", hl.dsp.exec_raw("sendshortcut", "MOD5, q, activewindow"), { description = "frame shell · type @" })
+-- real key and no virtual keyboard shows up as a layout change. The launcher is a layer, not
+-- a window, so while it is open the @ goes to it over IPC instead (else it lands behind it).
+take("CTRL + ALT + Q", function()
+    if #hl.get_layers({ namespace = "qs-launcher" }) > 0 then
+        hl.exec_cmd("qs ipc call launcher type @")
+    else
+        hl.dispatch(hl.dsp.exec_raw("sendshortcut", "MOD5, q, activewindow"))
+    end
+end, { description = "frame shell · type @" })
 
 -- Screenshots (the distro binds Print to grim + slurp; the shell has its own picker)
 take("Print", shell("screenshot", "region"), { description = "frame shell · screenshot: region or window" })

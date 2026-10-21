@@ -51,6 +51,13 @@ Item {
         input.cursorPosition = text.length;
     }
 
+    // Types text at the cursor, over a selection (Ctrl+Alt+Q → @, frame/shell.lua)
+    function type(text) {
+        if (input.selectedText !== "")
+            input.remove(input.selectionStart, input.selectionEnd);
+        input.insert(input.cursorPosition, text);
+    }
+
     function reset() {
         input.text = "";
         current = 0;

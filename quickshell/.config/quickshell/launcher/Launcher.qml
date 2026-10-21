@@ -116,6 +116,13 @@ Scope {
             root.show(text);
         }
 
+        // Types into the open launcher; Ctrl+Alt+Q (frame/shell.lua) sends its @ here, the
+        // launcher is no window that sendshortcut could reach
+        function type(text: string): void {
+            if (root.open)
+                view.type(text);
+        }
+
         function close(): void {
             root.hide();
         }
