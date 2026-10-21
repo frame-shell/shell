@@ -3,8 +3,10 @@ pragma Singleton
 import QtQuick
 import Quickshell
 import Quickshell.Io
+import Quickshell.Hyprland
 
-// Installed apps from .desktop files, fuzzy search and launch counts.
+// Installed apps from .desktop files, fuzzy search and launch counts. An app that already
+// runs is not started again: Enter brings its window to the current view.
 // Counts live in launcher-usage.json in Quickshell's state folder:
 //   { "<desktop entry id>": <launches>, … }
 Singleton {
@@ -91,11 +93,67 @@ Singleton {
         return "app";
     }
 
-    function launch(entry) {
+    // The window of an app that already runs, else null: the class Hyprland reports against
+    // the entry's id, its StartupWMClass and the program it runs (each also without a
+    // reverse-domain prefix: dev.zed.Zed is "zed"); of several windows the one used last.
+    // Hyprland.toplevels is refreshed when the launcher opens (Launcher.qml).
+    function windowOf(entry) {
+        const names = new Set();
+        const add = s => {
+            s = String(s ?? "").trim().toLowerCase();
+            if (s !== "") {
+                names.add(s);
+                names.add(s.slice(s.lastIndexOf(".") + 1));
+            }
+        };
+        add(entry.id);
+        add(entry.startupClass);
+        const exe = String((entry.command ?? [])[0] ?? String(entry.execString ?? "").split(" ")[0]);
+        add(exe.slice(exe.lastIndexOf("/") + 1));
+
+        let best = null;
+        for (const t of Hyprland.toplevels.values) {
+            const o = t.lastIpcObject ?? {};
+            const cls = String(o.class ?? t.wayland?.appId ?? "").toLowerCase();
+            if (cls === "" || !(names.has(cls) || names.has(cls.slice(cls.lastIndexOf(".") + 1))))
+                continue;
+            if (o.mapped === false || o.hidden === true)
+                continue;
+            const order = Number(o.focusHistoryID ?? 1e9);
+            if (!best || order < best.order)
+                best = { order, address: String(o.address ?? t.address ?? ""), title: String(o.title ?? ""), workspace: String(o.workspace?.name ?? "") };
+        }
+        return best;
+    }
+
+    // Brings a running window to the current view: on the canvas into the middle of the
+    // focused screen (canvas.lua summon), otherwise onto the active workspace, and focuses it
+    function summon(address) {
+        if (CanvasLayout.enabled) {
+            CanvasLayout.summon(address);
+            return;
+        }
+        const a = String(address).replace(/[^0-9a-fx]/gi, "");
+        Quickshell.execDetached(["hyprctl", "eval",
+            `local w = hl.get_window("address:${a}") local ws = hl.get_active_workspace() `
+            + `if w and ws then hl.dispatch(hl.dsp.window.move({ workspace = tostring(ws.id), follow = false, window = "address:${a}" })) `
+            + `hl.dispatch(hl.dsp.focus({ window = "address:${a}" })) end`]);
+    }
+
+    // Enter: the app's window if it already runs (fresh false), else a new start
+    function launch(entry, fresh) {
         const next = Object.assign({}, usage);
         next[entry.id] = (next[entry.id] ?? 0) + 1;
         usage = next;
         store.setText(JSON.stringify(next));
+
+        if (!fresh) {
+            const win = windowOf(entry);
+            if (win) {
+                summon(win.address);
+                return;
+            }
+        }
 
         if (entry.runInTerminal)
             Quickshell.execDetached(["ghostty", "-e", ...entry.command]);

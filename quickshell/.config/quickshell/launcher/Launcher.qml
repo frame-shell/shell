@@ -28,6 +28,8 @@ Scope {
             return;
         }
         window.screen = focusedScreen();
+        // Fresh window list, so Enter on a running app finds its window (Apps.windowOf)
+        Hyprland.refreshToplevels();
         open = true;
         view.reset();
         if (preset)

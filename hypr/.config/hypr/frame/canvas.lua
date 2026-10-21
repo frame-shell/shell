@@ -359,6 +359,42 @@ local function move_to(address, x, y, name)
     snapshot()
 end
 
+-- Enter in the launcher on an app that already runs (quickshell/services/Apps.qml): its
+-- window comes into the middle of the focused screen's view, from another monitor too, and
+-- takes focus; one that is fully in view already only takes focus
+local function summon(address)
+    local w = hl.get_window("address:" .. address)
+    local ws = active_ws()
+    if not (w and w.mapped and ws) then
+        return
+    end
+    local target
+    for _, v in ipairs(views()) do
+        if v.ws.id == ws.id then
+            target = v
+        end
+    end
+    if not target then
+        return
+    end
+    leave_fullscreen(target.ws)
+    local b = box(w)
+    local here = w.workspace and w.workspace.id == target.ws.id
+    if not (here and fully_visible(b, target)) then
+        if not here then
+            run(hl.dsp.window.move({ workspace = tostring(target.ws.id), follow = false, window = sel(w) }))
+        end
+        run(hl.dsp.window.move({
+            x = math.floor(target.x + (target.w - b.w) / 2),
+            y = math.floor(target.y + (target.h - b.h) / 2),
+            window = sel(w),
+        }))
+    end
+    run(hl.dsp.focus({ window = sel(w) }))
+    run(hl.dsp.window.bring_to_top())
+    snapshot()
+end
+
 -- F in the overview: fullscreen on the screen the window is (mostly) on. A window hanging
 -- over another monitor's canvas moves there first, so it fills the screen it sits on.
 local function fullscreen_on(address)
@@ -736,6 +772,7 @@ frame_canvas = {
     look_at = look_at,
     select = pick,
     move_to = move_to,
+    summon = summon,
     fullscreen = fullscreen_on,
     resize_to = resize_to,
     close_window = close_window,

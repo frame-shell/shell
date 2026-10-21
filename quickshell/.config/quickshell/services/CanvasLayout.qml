@@ -104,6 +104,12 @@ Singleton {
         run(`frame_canvas.move_to("${addr(address)}", ${Math.round(x)}, ${Math.round(y)}, ${monitorArg(monitor)})`);
     }
 
+    // Enter in the launcher on an app that already runs: its window comes into the middle
+    // of the focused screen's view and takes focus (Apps.qml)
+    function summon(address) {
+        run(`frame_canvas.summon("${addr(address)}")`);
+    }
+
     // Fullscreen on the screen the window is on (overview, F)
     function fullscreen(address) {
         run(`frame_canvas.fullscreen("${addr(address)}")`);

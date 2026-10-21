@@ -136,16 +136,21 @@ Item {
 
     function appRows(rest) {
         const tints = [Theme.primary, Theme.accent, Theme.secondary, Theme.shadow, Theme.ok];
-        return Apps.search(rest).map(({ entry, idx }) => ({
-            kind: "app", entry,
-            title: entry.name, markup: markup(entry.name, idx),
-            desc: entry.comment || entry.genericName || "",
-            category: Apps.categoryOf(entry),
-            glyph: entry.name.charAt(0).toUpperCase(),
-            tint: tints[entry.name.length % tints.length],
-            icon: entry.icon,
-            rows: [["category", Apps.categoryOf(entry)], ["runs", entry.execString], ["used", `${Apps.uses(entry)} times`]]
-        }));
+        return Apps.search(rest).map(({ entry, idx }) => {
+            const win = Apps.windowOf(entry);
+            return {
+                kind: "app", entry,
+                title: entry.name, markup: markup(entry.name, idx),
+                desc: win ? `running · ${win.title}` : (entry.comment || entry.genericName || ""),
+                category: Apps.categoryOf(entry),
+                glyph: entry.name.charAt(0).toUpperCase(),
+                tint: tints[entry.name.length % tints.length],
+                icon: entry.icon,
+                rows: [["category", Apps.categoryOf(entry)], ["runs", entry.execString], ["used", `${Apps.uses(entry)} times`],
+                    ["window", win ? win.title : "none open"]],
+                keys: win ? "↑↓ select · enter bring window here · shift+enter new one · esc close" : undefined
+            };
+        });
     }
 
     function calcRows(rest) {
@@ -674,7 +679,8 @@ Item {
         const close = { close: true }, stay = { close: false };
         switch (r.kind) {
         case "app":
-            Apps.launch(r.entry);
+            // A running app comes to the current view; shift starts another
+            Apps.launch(r.entry, shift);
             return close;
         case "calc":
             if (r.value === null)
