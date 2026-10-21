@@ -24,12 +24,35 @@ end
 -- AULA F75 (quickshell/services/Keyboard.qml): Super with anything, or two others together
 -- (Ctrl+Alt, Ctrl+Shift). A lone Shift or Ctrl is typing. The shell hears about it a moment
 -- after the modifiers settle, so Ctrl+C and Super+Space do not light anything.
-local MODS = {
-    [133] = "super", [134] = "super", [125] = "super", [126] = "super",
-    [50] = "shift", [62] = "shift", [42] = "shift", [54] = "shift",
-    [37] = "ctrl", [105] = "ctrl", [29] = "ctrl", [97] = "ctrl",
-    [64] = "alt", [108] = "alt", [56] = "alt", [100] = "alt",
+--
+-- The two code sets cannot be mixed in one table: XKB's Shift (50) is evdev's M, its Ctrl
+-- (37) evdev's K, and the other way round evdev's Shift (42) is XKB's G. So the set is
+-- learned from the first Super press (125/126 evdev, 133/134 XKB); until then only Super
+-- itself counts.
+local MOD_CODES = {
+    evdev = {
+        [125] = "super", [126] = "super", [42] = "shift", [54] = "shift",
+        [29] = "ctrl", [97] = "ctrl", [56] = "alt", [100] = "alt",
+    },
+    xkb = {
+        [133] = "super", [134] = "super", [50] = "shift", [62] = "shift",
+        [37] = "ctrl", [105] = "ctrl", [64] = "alt", [108] = "alt",
+    },
 }
+local MODS = nil -- one of MOD_CODES once Super was pressed
+
+local function modOf(keycode)
+    if not MODS then
+        if keycode == 125 or keycode == 126 then
+            MODS = MOD_CODES.evdev
+        elseif keycode == 133 or keycode == 134 then
+            MODS = MOD_CODES.xkb
+        else
+            return nil
+        end
+    end
+    return MODS[keycode]
+end
 local MODS_DELAY_MS = 200
 local down = {}   -- modifier name -> true while a key of it is held
 local told = ""   -- what the shell knows
@@ -94,7 +117,7 @@ tick:set_enabled(false)
 
 -- state: 0 released, 1 pressed, 2 repeated
 hl.on("input.keyboard.key", function(keycode, _, state)
-    local mod = MODS[keycode]
+    local mod = modOf(keycode)
     if mod and state ~= 2 then
         down[mod] = state == 1 or nil
         modifierChanged()
