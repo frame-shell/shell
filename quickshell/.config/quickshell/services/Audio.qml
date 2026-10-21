@@ -14,9 +14,9 @@ Singleton {
 
     readonly property var nodes: Pipewire.nodes.values.filter(n => n.audio)
     // Apps that play audio (they output into a sink)
-    readonly property var playback: nodes.filter(n => n.isStream && !n.isSink && !isMonitor(n))
+    readonly property var playback: nodes.filter(n => n.isStream && !isRecording(n) && !isMonitor(n))
     // Apps that record audio (they take input from a source)
-    readonly property var recording: nodes.filter(n => n.isStream && n.isSink && !isMonitor(n))
+    readonly property var recording: nodes.filter(n => n.isStream && isRecording(n) && !isMonitor(n))
     readonly property var sinks: nodes.filter(n => !n.isStream && n.isSink)
     readonly property var sources: nodes.filter(n => !n.isStream && !n.isSink)
 
@@ -27,6 +27,12 @@ Singleton {
     // Volume and mute only work on tracked nodes
     PwObjectTracker {
         objects: root.playback.concat(root.recording)
+    }
+
+    // Quickshell 0.3 reports isSink = true for playback streams (Stream/Output/Audio), so
+    // streams are told apart by their media.class type, not by isSink
+    function isRecording(node) {
+        return node.type === PwNodeType.AudioInStream;
     }
 
     function isMonitor(node) {
@@ -63,12 +69,12 @@ Singleton {
 
     // The link between a stream and its device, if any
     function linkOf(node) {
-        return Pipewire.linkGroups.values.find(g => node.isSink ? g.target === node : g.source === node) ?? null;
+        return Pipewire.linkGroups.values.find(g => isRecording(node) ? g.target === node : g.source === node) ?? null;
     }
 
     function deviceOf(node) {
         const link = linkOf(node);
-        return link ? (node.isSink ? link.source : link.target) : null;
+        return link ? (isRecording(node) ? link.source : link.target) : null;
     }
 
     // No running link means the app is paused or silent
@@ -82,18 +88,18 @@ Singleton {
         const device = deviceOf(node);
         if (!device)
             return "";
-        const map = node.isSink ? Config.goxlrInputs : Config.goxlrOutputs;
-        const list = node.isSink ? sources : sinks;
+        const map = isRecording(node) ? Config.goxlrInputs : Config.goxlrOutputs;
+        const list = isRecording(node) ? sources : sinks;
         return Object.keys(map).find(k => findDevice(list, map[k]) === device) ?? "";
     }
 
     function move(node, route) {
-        const map = node.isSink ? Config.goxlrInputs : Config.goxlrOutputs;
-        const device = findDevice(node.isSink ? sources : sinks, map[route]);
+        const map = isRecording(node) ? Config.goxlrInputs : Config.goxlrOutputs;
+        const device = findDevice(isRecording(node) ? sources : sinks, map[route]);
         if (!device)
             return;
         // pipewire-pulse uses the PipeWire node id as the stream index
-        Quickshell.execDetached(["pactl", node.isSink ? "move-source-output" : "move-sink-input", String(node.id), device.name]);
+        Quickshell.execDetached(["pactl", isRecording(node) ? "move-source-output" : "move-sink-input", String(node.id), device.name]);
     }
 
     function setVolume(node, value) {
