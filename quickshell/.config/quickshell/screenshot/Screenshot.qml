@@ -142,7 +142,8 @@ Scope {
                     else if (id === "folder")
                         Quickshell.execDetached(["xdg-open", root.folder]);
                     else if (id === "delete")
-                        Quickshell.execDetached(["rm", "-f", file]);
+                        // With the edit the picture editor kept for it
+                        Quickshell.execDetached(["rm", "-f", "--", file, file.replace(/\.[^./]+$/, "") + ".edit.json"]);
                 }
             });
         }

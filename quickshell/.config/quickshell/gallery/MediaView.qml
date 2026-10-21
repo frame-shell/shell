@@ -32,6 +32,8 @@ FocusScope {
     property int anchorIndex: -1
     property bool confirmDelete: false
     property string status: ""
+    // .edit.json files and .tracks folders whose picture or video is gone (frame-media leftovers)
+    property var leftovers: []
 
     readonly property int columns: Math.max(2, Math.floor(grid.width / 300))
 
@@ -227,6 +229,8 @@ FocusScope {
                 root.rebuild();
                 thumbs.queue = next.filter(it => it.kind === "video" && it.thumb === "").map(it => it.path);
                 thumbs.next();
+                leftoverProc.command = [root.tool, "leftovers"].concat(root.folders);
+                leftoverProc.running = true;
             }
         }
     }
@@ -272,6 +276,14 @@ FocusScope {
                 }
             }
             next();
+        }
+    }
+
+    Process {
+        id: leftoverProc
+
+        stdout: StdioCollector {
+            onStreamFinished: root.leftovers = this.text.split("\n").filter(l => l !== "")
         }
     }
 
@@ -375,6 +387,20 @@ FocusScope {
             Label {
                 text: listProc.running ? "looking…" : `${root.all.length} files · ${root.fmtSize(root.all.reduce((s, it) => s + it.size, 0))}`
                 color: Theme.muted
+            }
+
+            // Edits and tracks of files deleted elsewhere (Dolphin): into the trash with one click
+            Action {
+                visible: root.leftovers.length > 0
+                text: `clean up ${root.leftovers.length} leftover${root.leftovers.length === 1 ? "" : "s"}`
+                tint: Theme.warn
+                onClicked: {
+                    if (trashProc.running)
+                        return;
+                    trashProc.count = root.leftovers.length;
+                    trashProc.command = [root.tool, "trash"].concat(root.leftovers);
+                    trashProc.running = true;
+                }
             }
 
             Action {

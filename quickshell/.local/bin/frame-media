@@ -8,7 +8,11 @@
 #                                    prints the video's length in seconds
 #   frame-media trash <file> ...     into the trash, with what belongs to it (<name>.tracks/,
 #                                    <name>.edit.json); gio comes with glib2
+#   frame-media leftovers <dir> ...  .edit.json files and .tracks folders whose picture or video
+#                                    is gone (deleted in Dolphin, say), one path per line
 set -euo pipefail
+
+MEDIA_EXT=(png jpg jpeg webp gif bmp mp4 mkv webm mov)
 
 die() {
     echo "frame-media: $*" >&2
@@ -64,9 +68,32 @@ cmd_trash() {
     return 0
 }
 
+cmd_leftovers() {
+    local d path stem ext found
+    for d in "$@"; do
+        [[ -d $d ]] || continue
+        while IFS= read -r -d '' path; do
+            case $path in
+                *.edit.json) stem=${path%.edit.json} ;;
+                *.tracks) stem=${path%.tracks} ;;
+                *) continue ;;
+            esac
+            found=0
+            for ext in "${MEDIA_EXT[@]}"; do
+                if [[ -e $stem.$ext || -e $stem.${ext^^} ]]; then
+                    found=1
+                    break
+                fi
+            done
+            ((found)) || printf '%s\n' "$path"
+        done < <(find "$d" -maxdepth 1 \( -name '*.edit.json' -type f -o -name '*.tracks' -type d \) -print0 2>/dev/null)
+    done
+}
+
 case ${1:-} in
     list) shift; cmd_list "$@" ;;
     thumb) shift; cmd_thumb "$@" ;;
     trash) shift; cmd_trash "$@" ;;
-    *) die "usage: frame-media list <dir> ... | thumb <video> <jpg> | trash <file> ..." ;;
+    leftovers) shift; cmd_leftovers "$@" ;;
+    *) die "usage: frame-media list <dir> ... | thumb <video> <jpg> | trash <file> ... | leftovers <dir> ..." ;;
 esac

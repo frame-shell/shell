@@ -24,11 +24,14 @@ Scope {
     readonly property bool cropped: crop.x > 0.001 || crop.y > 0.001 || crop.w < 0.999 || crop.h < 0.999
 
     property var undoStack: []
+    // Something was changed since the last write; opening alone writes no file
+    property bool dirty: false
 
     function load(path) {
         if (path === image)
             return;
         save.stop();
+        dirty = false;
         image = path;
         imageWidth = 0;
         imageHeight = 0;
@@ -49,15 +52,14 @@ Scope {
     }
 
     function changed() {
+        dirty = true;
         save.restart();
     }
 
     function writeNow() {
-        if (editFile === "")
+        if (!dirty || editFile === "")
             return;
-        // Nothing done yet: no file next to the picture
-        if (overlays.length === 0 && !cropped && editView.text().trim() === "")
-            return;
+        dirty = false;
         editView.setText(JSON.stringify({ version: 1, image, overlays, crop }, null, 1));
     }
 
@@ -151,6 +153,10 @@ Scope {
     // ── Export ───────────────────────────────────────────────
 
     property bool exporting: false
+    // "export & delete raw": once the export worked, the original goes into the trash with
+    // what belongs to it (frame-media trash), and the editor closes
+    property bool deleteAfterExport: false
+    signal originalDeleted()
     property string exportError: ""
 
     // ffmpeg's arguments: blur boxes and pictures on the full picture, the crop last
@@ -196,9 +202,10 @@ Scope {
         return args;
     }
 
-    function startExport() {
+    function startExport(deleteOriginal) {
         if (exporting || imageWidth <= 0)
             return;
+        deleteAfterExport = deleteOriginal === true;
         writeNow();
         exportError = "";
         exporting = true;
@@ -221,9 +228,15 @@ Scope {
                 Notifications.push({ app: "editor", glyph: "✗", title: "export failed", body: root.exportError });
                 return;
             }
+            const removed = root.deleteAfterExport;
+            if (removed) {
+                root.deleteAfterExport = false;
+                Quickshell.execDetached([`${Quickshell.env("HOME")}/.local/bin/frame-media`, "trash", root.image]);
+                root.originalDeleted();
+            }
             Notifications.push({
                 app: "editor",
-                title: "picture exported",
+                title: removed ? "picture exported · original in the trash" : "picture exported",
                 body: name,
                 image: file,
                 actions: [

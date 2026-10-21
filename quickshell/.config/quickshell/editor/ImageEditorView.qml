@@ -16,11 +16,19 @@ FocusScope {
     // { kind: "overlay", id } | null
     property var selected: null
     property bool cropping: false
+    // "export & delete original" waits for a yes
+    property bool confirmRaw: false
 
     readonly property var selOverlay: selected?.kind === "overlay" ? project.overlay(selected.id) : null
 
     ImageProject {
         id: project
+
+        // The picture is gone after "export & delete original"; nothing is written back for it
+        onOriginalDeleted: {
+            dirty = false;
+            root.closeRequested();
+        }
     }
 
     function fileUrl(path) {
@@ -67,7 +75,7 @@ FocusScope {
             if (project.undo())
                 select(null);
         } else if (event.key === Qt.Key_S && ctrl)
-            project.startExport();
+            project.startExport(false);
         else if (event.key === Qt.Key_Escape) {
             select(null);
             cropping = false;
@@ -326,10 +334,42 @@ FocusScope {
                     }
 
                     Action {
+                        visible: !root.confirmRaw
                         text: project.exporting ? "exporting…" : "export"
                         tint: Theme.primary
                         available: !project.exporting && project.imageWidth > 0
-                        onClicked: project.startExport()
+                        onClicked: project.startExport(false)
+                    }
+
+                    Action {
+                        visible: !project.exporting && !root.confirmRaw
+                        text: "export & delete original"
+                        tint: Theme.danger
+                        available: project.imageWidth > 0
+                        onClicked: root.confirmRaw = true
+                    }
+
+                    // Asked in place: no dialog
+                    Label {
+                        visible: root.confirmRaw
+                        text: "then the original goes into the trash?"
+                        color: Theme.warn
+                    }
+
+                    Action {
+                        visible: root.confirmRaw
+                        text: "yes"
+                        tint: Theme.danger
+                        onClicked: {
+                            root.confirmRaw = false;
+                            project.startExport(true);
+                        }
+                    }
+
+                    Action {
+                        visible: root.confirmRaw
+                        text: "no"
+                        onClicked: root.confirmRaw = false
                     }
                 }
             }

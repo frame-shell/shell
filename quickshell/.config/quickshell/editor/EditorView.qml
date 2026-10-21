@@ -26,11 +26,20 @@ FocusScope {
     property var selected: null
     // Timeline pixels per second
     property real pps: 12
+    // "export & delete raw" waits for a yes
+    property bool confirmRaw: false
 
     readonly property var selOverlay: selected?.kind === "overlay" ? project.overlay(selected.id) : null
 
     EditorProject {
         id: project
+
+        // The recording is gone after "export & delete raw"; nothing is written back for it
+        onOriginalDeleted: {
+            root.pause();
+            dirty = false;
+            root.closeRequested();
+        }
     }
 
     function fileUrl(path) {
@@ -695,10 +704,42 @@ FocusScope {
                     }
 
                     Action {
+                        visible: !root.confirmRaw
                         text: project.exporting ? "cancel" : "export"
                         tint: project.exporting ? Theme.warn : Theme.primary
                         available: project.exporting || (project.videoWidth > 0 && project.segments.length > 0)
-                        onClicked: project.exporting ? project.cancelExport() : project.startExport()
+                        onClicked: project.exporting ? project.cancelExport() : project.startExport(false)
+                    }
+
+                    Action {
+                        visible: !project.exporting && !root.confirmRaw
+                        text: "export & delete raw"
+                        tint: Theme.danger
+                        available: project.videoWidth > 0 && project.segments.length > 0
+                        onClicked: root.confirmRaw = true
+                    }
+
+                    // Asked in place: no dialog
+                    Label {
+                        visible: root.confirmRaw
+                        text: "then the recording, its tracks and this edit go into the trash?"
+                        color: Theme.warn
+                    }
+
+                    Action {
+                        visible: root.confirmRaw
+                        text: "yes"
+                        tint: Theme.danger
+                        onClicked: {
+                            root.confirmRaw = false;
+                            project.startExport(true);
+                        }
+                    }
+
+                    Action {
+                        visible: root.confirmRaw
+                        text: "no"
+                        onClicked: root.confirmRaw = false
                     }
                 }
 

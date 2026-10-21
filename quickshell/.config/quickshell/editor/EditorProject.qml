@@ -44,6 +44,8 @@ Scope {
     readonly property bool separateTracks: tracks.some(t => t.file !== "")
 
     property var undoStack: []
+    // Something was changed since the last write; opening alone writes no file
+    property bool dirty: false
 
     // ── Time ─────────────────────────────────────────────────
 
@@ -77,6 +79,7 @@ Scope {
         if (path === video && segments.length > 0)
             return;
         save.stop();
+        dirty = false;
         video = path;
         duration = 0;
         videoWidth = 0;
@@ -152,12 +155,14 @@ Scope {
     }
 
     function changed() {
+        dirty = true;
         save.restart();
     }
 
     function writeNow() {
-        if (editFile === "" || segments.length === 0)
+        if (!dirty || editFile === "" || segments.length === 0)
             return;
+        dirty = false;
         editView.setText(JSON.stringify({ version: 1, video, segments, overlays, tracks }, null, 1));
     }
 
@@ -345,6 +350,10 @@ Scope {
     // ── Export ───────────────────────────────────────────────
 
     property bool exporting: false
+    // "export & delete raw": once the export worked, the original goes into the trash with
+    // what belongs to it (frame-media trash), and the editor closes
+    property bool deleteAfterExport: false
+    signal originalDeleted()
     property real exportProgress: 0
     property string exportError: ""
 
@@ -437,9 +446,10 @@ Scope {
         return args;
     }
 
-    function startExport() {
+    function startExport(deleteOriginal) {
         if (exporting || videoWidth <= 0 || segments.length === 0)
             return;
+        deleteAfterExport = deleteOriginal === true;
         writeNow();
         exportError = "";
         exportProgress = 0;
@@ -486,10 +496,16 @@ Scope {
                 return;
             }
             root.exportProgress = 1;
+            const removed = root.deleteAfterExport;
+            if (removed) {
+                root.deleteAfterExport = false;
+                Quickshell.execDetached([`${Quickshell.env("HOME")}/.local/bin/frame-media`, "trash", root.video]);
+                root.originalDeleted();
+            }
             Notifications.push({
                 app: "recording",
                 glyph: "●",
-                title: "edit exported",
+                title: removed ? "edit exported · original in the trash" : "edit exported",
                 body: name,
                 actions: [
                     { id: "open", label: "open", style: "ok" },
