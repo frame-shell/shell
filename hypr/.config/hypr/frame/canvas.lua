@@ -368,6 +368,11 @@ local function summon(address)
     if not (w and w.mapped and ws) then
         return
     end
+    -- A game on the games workspace (shell.lua, Super+Tab) stays there: the screen goes to it
+    if w.workspace and w.workspace.name == "gaming" then
+        run(hl.dsp.focus({ window = sel(w) }))
+        return
+    end
     local target
     for _, v in ipairs(views()) do
         if v.ws.id == ws.id then
@@ -486,7 +491,11 @@ end
 
 -- ── New windows ──────────────────────────────────────────────
 
--- The middle of the screen if it is free, otherwise the nearest free spot in rings around it
+-- The middle of the screen if it is free, otherwise the nearest free spot in rings around
+-- it, but only inside the view: the view never moves for a new window (a game that opens
+-- behind a crowded middle used to pull the whole desktop along before it went fullscreen).
+-- With no free spot in view it is stacked slightly offset in the middle; one bigger than
+-- the screen goes to the top left corner
 local function place_new(w)
     if native_float[w.address] or not w.floating or w.pinned then
         return
@@ -506,6 +515,10 @@ local function place_new(w)
         end
     end
     local bw, bh = w.size.x, w.size.y
+    if bw >= v.w or bh >= v.h then
+        run(hl.dsp.window.move({ x = math.floor(v.x), y = math.floor(v.y), window = sel(w) }))
+        return
+    end
     local x0, y0 = v.x + (v.w - bw) / 2, v.y + (v.h - bh) / 2
     local candidates = { { x = x0, y = y0, d = 0 } }
     for ring = 1, 4 do
@@ -525,11 +538,14 @@ local function place_new(w)
 
     local spot
     for _, c in ipairs(candidates) do
-        local free = true
-        for _, o in ipairs(others) do
-            if overlaps({ x = c.x, y = c.y, w = bw, h = bh }, o) then
-                free = false
-                break
+        local b = { x = c.x, y = c.y, w = bw, h = bh }
+        local free = fully_visible(b, v)
+        if free then
+            for _, o in ipairs(others) do
+                if overlaps(b, o) then
+                    free = false
+                    break
+                end
             end
         end
         if free then
@@ -537,13 +553,31 @@ local function place_new(w)
             break
         end
     end
-    -- A crowded canvas: stack it slightly offset in the middle
-    spot = spot or { x = x0 + 32 * (#others % 8), y = y0 + 32 * (#others % 8) }
+    -- A crowded view: stack it slightly offset in the middle, kept on screen
+    if not spot then
+        local step = 32 * (#others % 8)
+        spot = {
+            x = math.min(x0 + step, v.x + v.w - bw),
+            y = math.min(y0 + step, v.y + v.h - bh),
+        }
+    end
 
     run(hl.dsp.window.move({ x = math.floor(spot.x), y = math.floor(spot.y), window = sel(w) }))
-    if not fully_visible({ x = spot.x, y = spot.y, w = bw, h = bh }, v) then
-        center_on(w)
+end
+
+-- Into the view of its screen: the middle, or the top left corner for one bigger than the
+-- screen (a game out of fullscreen puts itself where it was last time, often off the screen)
+local function into_view(w)
+    local v = view_of(w.workspace)
+    if not v then
+        return
     end
+    local bw, bh = w.size.x, w.size.y
+    local x, y = v.x + (v.w - bw) / 2, v.y + (v.h - bh) / 2
+    if bw >= v.w or bh >= v.h then
+        x, y = v.x, v.y
+    end
+    run(hl.dsp.window.move({ x = math.floor(x), y = math.floor(y), window = sel(w) }))
 end
 
 -- Windows that were tiled before (switching from the normal layout) float now
@@ -661,6 +695,26 @@ on("window.open", function(w)
     snapshot()
 end)
 
+-- Out of fullscreen, a window that is not on its screen comes into view; the geometry is
+-- back a moment after the event
+on("window.fullscreen", function(w)
+    local address = w and w.address
+    if not address then
+        return
+    end
+    hl.timer(function()
+        local win = hl.get_window("address:" .. address)
+        if not win or not win.mapped or is_fullscreen(win) or not win.floating then
+            return
+        end
+        local v = view_of(win.workspace)
+        if v and not fully_visible(box(win), v) then
+            into_view(win)
+        end
+        snapshot()
+    end, { timeout = 150, type = "oneshot" })
+end)
+
 -- The window is being torn down here; its fields may already be gone, and the window
 -- list still has it for a moment, so the snapshot waits for the next timer tick
 on("window.destroy", function(w)
@@ -773,6 +827,13 @@ frame_canvas = {
     select = pick,
     move_to = move_to,
     summon = summon,
+    into_view = function(address)
+        local w = hl.get_window("address:" .. address)
+        if w then
+            into_view(w)
+            snapshot()
+        end
+    end,
     fullscreen = fullscreen_on,
     resize_to = resize_to,
     close_window = close_window,

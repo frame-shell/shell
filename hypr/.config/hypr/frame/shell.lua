@@ -69,6 +69,35 @@ take("ALT + Tab", function()
     hl.dispatch(hl.dsp.window.bring_to_top())
 end, { description = "frame windows · next window, brought up" })
 take("SUPER + ALT + B", hl.dsp.window.alter_zorder({ mode = "bottom" }), { description = "frame windows · window to the back" })
+
+-- Steam games and gamescope get a workspace of their own from the distro's rules
+-- (config/windowrules.lua: name:gaming) and the screen switches to it, so the desktop is out
+-- of sight while a game runs. Super+Tab goes back to the desktop and to the games again;
+-- with several games open Alt+Tab goes from one to the next (the focused one takes the
+-- fullscreen, misc.on_focus_under_fullscreen), and the launcher's Enter on a running game
+-- shows that one. Also for the bar: frame_games.toggle()
+local GAME_WS = "gaming"
+frame_games = {}
+function frame_games.toggle()
+    local mon = hl.get_active_monitor()
+    local ws = mon and mon.active_workspace
+    if ws and ws.name == GAME_WS then
+        local last = hl.get_last_workspace(mon)
+        if last and not last.special and last.name ~= GAME_WS then
+            hl.dispatch(hl.dsp.focus({ workspace = tostring(last.id) }))
+        else
+            hl.dispatch(hl.dsp.focus({ workspace = "previous" }))
+        end
+        return
+    end
+    for _, w in ipairs(hl.get_workspaces() or {}) do
+        if w.name == GAME_WS and (w.windows or 0) > 0 then
+            hl.dispatch(hl.dsp.focus({ workspace = "name:" .. GAME_WS }))
+            return
+        end
+    end
+end
+take("SUPER + Tab", frame_games.toggle, { description = "frame windows · games ↔ desktop (Steam games run on their own workspace)" })
 take("SUPER + ALT + S", function()
     local w = hl.get_active_window()
     if not w then
