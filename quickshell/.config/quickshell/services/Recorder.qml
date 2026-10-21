@@ -102,8 +102,9 @@ Singleton {
         const mix = chosen.map(c => `${c.source}=${Math.round(channelState(c.key).level * 100)}`);
         mixing = mix.length > 0;
         if (mixing) {
-            // The mix first, then wf-recorder on its monitor; the args after "--" are the sources
-            proc.command = ["sh", "-c", 'mkdir -p "$(dirname "$1")" && f=$1 && m=$2 && shift 2 && srcs=() && while [ "$1" != "--" ]; do srcs+=("$1"); shift; done && shift && "$m" start "${srcs[@]}" >/dev/null && exec wf-recorder -f "$f" --audio=frame-rec.monitor "$@"',
+            // The mix first, then wf-recorder on its monitor: the sources come before "--", the
+            // area after it (bash, for the array)
+            proc.command = ["bash", "-c", 'mkdir -p "$(dirname "$1")" && f=$1 && m=$2 && shift 2 && srcs=() && while [ "$1" != "--" ]; do srcs+=("$1"); shift; done && shift && "$m" start "${srcs[@]}" >/dev/null && exec wf-recorder -f "$f" --audio=frame-rec.monitor "$@"',
                 "frame-record", file, mixTool].concat(mix).concat(["--"]).concat(args);
         } else {
             proc.command = ["sh", "-c", 'mkdir -p "$(dirname "$1")" && f=$1 && shift && exec wf-recorder -f "$f" "$@"', "frame-record", file].concat(args);

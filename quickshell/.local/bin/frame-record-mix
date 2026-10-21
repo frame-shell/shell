@@ -53,12 +53,8 @@ cmd_start() {
         fi
         echo "$id" >>"$STATE"
         # The loopback is a stream into the sink; its volume is the channel's level
-        idx=$(pactl -f json list sink-inputs 2>/dev/null | python3 -c '
-import json, sys
-want = sys.argv[1]
-for i in json.load(sys.stdin):
-    if str(i.get("owner_module")) == want:
-        print(i["index"]); break' "$id" 2>/dev/null || true)
+        idx=$(pactl -f json list sink-inputs 2>/dev/null \
+            | jq -r --arg m "$id" 'first(.[] | select((.owner_module | tostring) == $m) | .index) // empty' 2>/dev/null || true)
         [[ -n $idx ]] && pactl set-sink-input-volume "$idx" "${percent}%" 2>/dev/null || true
     done
     echo "$SINK.monitor"
