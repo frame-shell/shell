@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# frame-start-locked – locks the session at Hyprland's start after `frame login auto`.
+#
+# With [initial_session] greetd logs in at boot without asking for a password, so the shell's
+# lockscreen has to be up before anyone can use the desktop. It fails closed: when the lock is
+# not up within 20 seconds (Quickshell crashed or does not start), the session ends and greetd
+# shows its greeter instead of an open desktop.
+#
+# Only the first session of a boot is the one greetd started without a password; a login
+# through the greeter afterwards (after a logout, or after this ended a session) is left alone,
+# so a broken shell cannot log you out in a loop.
+set -u
+
+exec_line=$(systemctl show -p ExecStart --value greetd.service 2>/dev/null || true)
+conf=$(sed -n 's/.*argv\[\]=[^;]*\(--config\|-c\)[ =]\([^ ;]*\).*/\2/p' <<<"$exec_line")
+grep -qs '^\[initial_session\]' "${conf:-/etc/greetd/config.toml}" || exit 0
+
+# The boot this already ran in, kept in your own state folder (not /tmp, where anyone could
+# put it there first)
+boot=$(cat /proc/sys/kernel/random/boot_id 2>/dev/null || true)
+state="${XDG_STATE_HOME:-$HOME/.local/state}/frameshell/start-locked"
+if [[ -n $boot ]]; then
+    [[ -r $state && $(<"$state") == "$boot" ]] && exit 0
+    mkdir -p "${state%/*}"
+    echo "$boot" >"$state"
+fi
+
+for _ in $(seq 1 80); do
+    if qs ipc call lock lock >/dev/null 2>&1 && [[ $(qs ipc call lock isLocked 2>/dev/null) == true ]]; then
+        exit 0
+    fi
+    sleep 0.25
+done
+
+logger -t frame-start-locked "the shell did not lock within 20 s; ending the session so greetd asks for the password"
+loginctl terminate-session "${XDG_SESSION_ID:-self}"
