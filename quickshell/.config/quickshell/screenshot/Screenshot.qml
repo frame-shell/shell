@@ -8,7 +8,8 @@ import qs.components
 import qs.config
 import qs.services
 
-// Screenshots in the shell's own frame: Print freezes every screen, you drag a region or
+// Screenshots in the shell's own frame: Print freezes every screen (the shot is cut out of
+// that frozen picture, so it shows the moment the key was pressed), you drag a region or
 // click a window (it lights up under the cursor), Enter takes the whole screen, Esc
 // cancels. Shift+Print takes the focused screen right away. The picture goes to
 // ~/Pictures/screenshots (your XDG pictures folder), lands in the clipboard, and a
@@ -42,17 +43,58 @@ Scope {
     // The same picker for a screen recording (services/Recorder.qml) instead of a picture
     property bool recordMode: false
 
+    // Freeze first: Print grabs every screen right away (grim -o, one PNG each), the picker
+    // shows exactly those pictures and the shot is cut out of them (ffmpeg crop). Menus,
+    // tooltips and video frames are taken as they were when the key was pressed. Without
+    // ffmpeg, or for a recording, the picker works on the live screen as before.
+    readonly property string frozenDir: `${Quickshell.env("XDG_RUNTIME_DIR") || "/tmp"}/frame-shot`
+    property bool frozen: false
+    property bool hasFfmpeg: false
+
+    function frozenFile(name) {
+        return `${frozenDir}/${name}.png`;
+    }
+
     function show() {
-        if (hidden || open)
+        if (hidden || open || freezeProc.running || grimProc.running)
             return;
         monitorsProc.running = true;
         clientsProc.running = true;
-        open = true;
+        frozen = false;
+        if (recordMode || !hasFfmpeg) {
+            open = true;
+            return;
+        }
+        // The picker opens once the screens are taken, so it is not in them
+        freezeProc.command = ["bash", "-c", 'd=$1; shift; mkdir -p "$d" && rm -f "$d"/*.png; for n in "$@"; do grim -o "$n" "$d/$n.png" & done; wait; for n in "$@"; do [ -s "$d/$n.png" ] || exit 1; done', "frame-freeze", frozenDir]
+            .concat(Quickshell.screens.map(s => s.name));
+        freezeProc.running = true;
     }
 
     function close() {
         open = false;
         recordMode = false;
+        dropFrozen();
+    }
+
+    // The frozen screens sit in RAM (XDG_RUNTIME_DIR); gone once the shot is taken or cancelled
+    function dropFrozen() {
+        Quickshell.execDetached(["sh", "-c", 'rm -f "$1"/*.png', "frame-freeze", frozenDir]);
+    }
+
+    Process {
+        id: freezeProc
+        onExited: code => {
+            root.frozen = code === 0;
+            if (!root.hidden)
+                root.open = true;
+        }
+    }
+
+    Process {
+        command: ["sh", "-c", "command -v ffmpeg"]
+        running: true
+        onExited: code => root.hasFfmpeg = code === 0
     }
 
     function monitorNamed(name) {
@@ -75,15 +117,48 @@ Scope {
         return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}-${String(d.getMilliseconds()).padStart(3, "0")}`;
     }
 
-    // A rectangle in layout coordinates; the overlays leave first so they are not in the picture
-    function captureRect(x, y, w, h) {
+    // A rectangle in layout coordinates on monitor `name`: cut out of the frozen screen, or
+    // taken live once the overlays have left (they must not be in the picture)
+    function captureRect(x, y, w, h, name) {
         if (w < 2 || h < 2)
             return;
+        const mon = monitorNamed(name);
+        if (open && frozen && !recordMode && mon) {
+            cropFrozen(mon, x, y, w, h);
+            return;
+        }
         start(["-g", `${Math.round(x)},${Math.round(y)} ${Math.round(w)}x${Math.round(h)}`]);
     }
 
     function captureOutput(name) {
+        // Only the open picker uses the frozen screens; Shift+Print takes the live one
+        if (open && frozen && !recordMode) {
+            takeFrozen(name, ["cp", "--", frozenFile(name)]);
+            return;
+        }
         start(["-o", name]);
+    }
+
+    // Layout coordinates → the frozen PNG's pixels (it has the monitor's real resolution),
+    // clipped to the monitor: a window can reach past its edge
+    function cropFrozen(mon, x, y, w, h) {
+        const sx = mon.pw / mon.w, sy = mon.ph / mon.h;
+        const x0 = Math.max(0, Math.round((x - mon.x) * sx)), y0 = Math.max(0, Math.round((y - mon.y) * sy));
+        const x1 = Math.min(mon.pw, Math.round((x - mon.x + w) * sx)), y1 = Math.min(mon.ph, Math.round((y - mon.y + h) * sy));
+        if (x1 - x0 < 2 || y1 - y0 < 2)
+            return;
+        takeFrozen(mon.name, ["ffmpeg", "-nostdin", "-v", "error", "-y", "-i", frozenFile(mon.name),
+            "-vf", `crop=${x1 - x0}:${y1 - y0}:${x0}:${y0}`, "-frames:v", "1", "-update", "1"]);
+    }
+
+    // cmd gets the new file's path as its last argument; no delay, the overlays are not in it
+    function takeFrozen(name, cmd) {
+        if (grimProc.running)
+            return;
+        pendingFile = `${folder}/screenshot-${stamp()}.png`;
+        open = false;
+        grimProc.command = ["sh", "-c", 'f=$1; shift; mkdir -p "$(dirname "$f")" && "$@" "$f" && wl-copy --type image/png < "$f"', "frame-shot", pendingFile].concat(cmd);
+        grimProc.running = true;
     }
 
     function start(args) {
@@ -116,6 +191,7 @@ Scope {
             onStreamFinished: if (this.text.trim() !== "") console.warn(`screenshot: ${this.text.trim()}`)
         }
         onExited: code => {
+            root.dropFrozen();
             const file = root.pendingFile;
             const name = file.slice(file.lastIndexOf("/") + 1);
             if (code !== 0) {
@@ -170,6 +246,8 @@ Scope {
                 try {
                     root.monitors = JSON.parse(this.text).map(m => ({
                         name: m.name, x: m.x, y: m.y, w: m.width / (m.scale || 1), h: m.height / (m.scale || 1),
+                        // Real pixels, for cutting the frozen picture
+                        pw: m.width, ph: m.height,
                         workspaces: [m.activeWorkspace?.id, m.specialWorkspace?.id].filter(id => id !== undefined && id !== 0)
                     }));
                 } catch (e) {
@@ -233,10 +311,21 @@ Scope {
                 right: true
             }
 
-            // The screen as it was when Print was pressed
+            // The screen as it was when Print was pressed: the frozen picture the shot is cut
+            // from, or (recording, no ffmpeg) a still of the screen
+            Image {
+                anchors.fill: parent
+                visible: root.frozen
+                source: root.frozen ? "file://" + root.frozenFile(overlay.modelData.name) : ""
+                cache: false
+                smooth: true
+                fillMode: Image.Stretch
+            }
+
             ScreencopyView {
                 anchors.fill: parent
-                captureSource: overlay.modelData
+                visible: !root.frozen
+                captureSource: root.frozen ? null : overlay.modelData
                 live: false
                 paintCursor: false
             }
@@ -368,10 +457,10 @@ Scope {
                         return;
                     if (overlay.dragging) {
                         overlay.dragging = false;
-                        root.captureRect(overlay.selX + overlay.offX, overlay.selY + overlay.offY, overlay.selW, overlay.selH);
+                        root.captureRect(overlay.selX + overlay.offX, overlay.selY + overlay.offY, overlay.selW, overlay.selH, overlay.modelData.name);
                     } else if (overlay.hoverWindow) {
                         const w = overlay.hoverWindow;
-                        root.captureRect(w.x, w.y, w.w, w.h);
+                        root.captureRect(w.x, w.y, w.w, w.h, w.monitor);
                     } else {
                         root.captureOutput(overlay.modelData.name);
                     }
@@ -386,7 +475,7 @@ Scope {
                 Keys.onEnterPressed: root.captureOutput(overlay.modelData.name)
                 Keys.onSpacePressed: {
                     if (overlay.hoverWindow)
-                        root.captureRect(overlay.hoverWindow.x, overlay.hoverWindow.y, overlay.hoverWindow.w, overlay.hoverWindow.h);
+                        root.captureRect(overlay.hoverWindow.x, overlay.hoverWindow.y, overlay.hoverWindow.w, overlay.hoverWindow.h, overlay.hoverWindow.monitor);
                     else
                         root.captureOutput(overlay.modelData.name);
                 }
