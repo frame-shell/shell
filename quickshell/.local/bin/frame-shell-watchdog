@@ -1,0 +1,86 @@
+#!/usr/bin/env bash
+# frame-shell-watchdog – restarts Quickshell when it hangs.
+#
+# A hung shell looks like a frozen PC: bar, launcher and overlays stop answering, and an open
+# launcher keeps the keyboard. Every 5 seconds this asks the shell over IPC whether the session
+# is locked; IPC runs on the shell's main thread, so a hung shell never answers. After three
+# missed answers in a row (about 25 s) the hung instance is dumped and replaced:
+#   - its log goes to ~/.local/state/frameshell/hangs/<time>.log
+#   - SIGABRT leaves a core dump with the stack it hung in (`coredumpctl info qs`)
+#   - a new qs starts and, if the session was locked, takes the lock over at once; until then
+#     Hyprland keeps the screen locked, so a hang never opens the desktop
+# Only a running but silent shell counts: a crashed one or one restarted by hand is left alone.
+#
+# `frame-shell-watchdog restart` does the same at once (Super+Shift+Escape, frame/shell.lua).
+set -u
+
+state="${XDG_STATE_HOME:-$HOME/.local/state}/frameshell"
+hangs="$state/hangs"
+lockfile="$state/shell-locked"
+
+restart() {
+    local pid=$1 reason=$2 stamp locked=false
+    stamp=$(date +%F_%H-%M-%S)
+    [[ -r $lockfile && $(<"$lockfile") == true ]] && locked=true
+    mkdir -p "$hangs"
+    logger -t frame-shell-watchdog "qs (pid $pid) $reason; restarting it (locked: $locked, log: $hangs/$stamp.log)"
+    {
+        echo "# qs pid $pid, $reason, $(date)"
+        grep -E '^(State|VmRSS|Threads):' "/proc/$pid/status" 2>/dev/null
+        for t in /proc/"$pid"/task/*; do
+            echo "thread ${t##*/} $(<"$t/comm"): $(<"$t/wchan")"
+        done 2>/dev/null
+        echo
+        qs log --pid "$pid" -t 300 2>&1
+    } >"$hangs/$stamp.log"
+
+    kill -ABRT "$pid" 2>/dev/null
+    for _ in $(seq 1 20); do
+        kill -0 "$pid" 2>/dev/null || break
+        sleep 0.5
+    done
+    kill -KILL "$pid" 2>/dev/null
+
+    # From Hyprland, so the new shell has the session's environment like the first one
+    hyprctl dispatch "hl.dsp.exec_cmd('qs')" >/dev/null
+    if [[ $locked == true ]]; then
+        for _ in $(seq 1 80); do
+            qs ipc call lock lock >/dev/null 2>&1 && break
+            sleep 0.25
+        done
+    fi
+}
+
+if [[ ${1:-} == restart ]]; then
+    pid=$(pgrep -xo qs) && restart "$pid" "restarted by hand"
+    exit 0
+fi
+
+# One watchdog per session
+exec 9>"${XDG_RUNTIME_DIR:-/tmp}/frame-shell-watchdog.lock"
+flock -n 9 || exit 0
+
+mkdir -p "$state"
+misses=0
+while sleep 5; do
+    pid=$(pgrep -xo qs) || { misses=0; continue; }
+    answer=$(timeout 4 qs ipc call lock isLocked 2>/dev/null)
+    case $? in
+    0)
+        misses=0
+        [[ $answer == true || $answer == false ]] && echo "$answer" >"$lockfile"
+        ;;
+    124)
+        misses=$((misses + 1))
+        if ((misses >= 3)); then
+            restart "$pid" "did not answer for $((misses * 9)) s"
+            misses=0
+            sleep 10
+        fi
+        ;;
+    *)
+        # No instance to talk to (starting up, or a broken config): not a hang
+        misses=0
+        ;;
+    esac
+done

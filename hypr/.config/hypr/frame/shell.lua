@@ -7,6 +7,8 @@
 -- frame-clip keeps what you copy for the launcher
 hl.on("hyprland.start", function()
     hl.exec_cmd("qs")
+    -- Restarts the shell when it hangs (a hung shell looks like a frozen PC) and keeps its log
+    hl.exec_cmd("~/.local/bin/frame-shell-watchdog")
     hl.exec_cmd("~/.local/bin/frame-wallpaper apply")
     -- Clipboard history for the launcher (;)
     hl.exec_cmd("wl-paste --watch ~/.local/bin/frame-clip store")
@@ -44,6 +46,9 @@ take("SUPER + K", shell("keyboard", "toggle"), { description = "frame shell · k
 take("SUPER + G", shell("media", "toggle"), { description = "frame shell · media: screenshots and recordings" })
 take("SUPER + comma", shell("settings", "toggle"), { description = "frame shell · settings" })
 take("SUPER + L", shell("lock", "lock"), { description = "frame shell · lock" })
+-- Hyprland still takes keys when the shell hangs: this restarts it without waiting for the
+-- watchdog (frame-shell-watchdog), the lock comes back if it was on
+take("SUPER + SHIFT + Escape", hl.dsp.exec_cmd("~/.local/bin/frame-shell-watchdog restart"), { description = "frame shell · restart the shell (when it hangs)" })
 -- Ctrl+Alt+Q types an @ (the Windows habit; for a keyboard without a working AltGr).
 -- Hyprland sends AltGr+Q (MOD5) straight to the focused window, so the app sees the
 -- real key and no virtual keyboard shows up as a layout change. The launcher is a layer, not
