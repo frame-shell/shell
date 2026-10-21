@@ -7,14 +7,20 @@
 #
 #   frame-record-mix start <source>=<percent> ...   e.g. alsa_output…Speaker__sink.monitor=100
 #                                                   prints the source to record: frame-rec.monitor
-#   frame-record-mix stop                           unloads everything again
+#   frame-record-mix tracks <dir> <key>|<source>|<percent> ...
+#                                                   also records every source on its own, one
+#                                                   <key>.flac each plus tracks.json, for the
+#                                                   recording editor (editor/)
+#   frame-record-mix stop                           unloads everything, ends the tracks
 #
-# The module ids are kept in $XDG_RUNTIME_DIR/frame-rec.modules; stop also removes leftovers
-# from a recording that never ended (the shell crashed).
+# The module ids are kept in $XDG_RUNTIME_DIR/frame-rec.modules, the track recorders in
+# frame-rec.tracks; stop also removes leftovers from a recording that never ended (the shell
+# crashed).
 set -euo pipefail
 
 SINK=frame-rec
 STATE="${XDG_RUNTIME_DIR:-/tmp}/frame-rec.modules"
+TRACKS="${XDG_RUNTIME_DIR:-/tmp}/frame-rec.tracks"
 
 die() {
     echo "frame-record-mix: $*" >&2
@@ -27,11 +33,52 @@ leftovers() {
 }
 
 cmd_stop() {
-    local id
+    local id pid pids=()
     { [[ -r $STATE ]] && cat "$STATE"; leftovers; } | sort -u | while read -r id; do
         [[ -n $id ]] && pactl unload-module "$id" 2>/dev/null || true
     done
     rm -f "$STATE"
+    # parecord finishes its FLAC file on SIGINT; give them two seconds, then they go
+    if [[ -r $TRACKS ]]; then
+        while read -r pid; do
+            [[ $pid =~ ^[0-9]+$ ]] && kill -INT "$pid" 2>/dev/null && pids+=("$pid")
+        done <"$TRACKS"
+        for _ in $(seq 1 20); do
+            local alive=0
+            for pid in "${pids[@]}"; do kill -0 "$pid" 2>/dev/null && alive=1; done
+            ((alive)) || break
+            sleep 0.1
+        done
+        for pid in "${pids[@]}"; do kill -TERM "$pid" 2>/dev/null || true; done
+        rm -f "$TRACKS"
+    fi
+}
+
+# One parecord per source, started before the picture; tracks.json says when each began
+# (milliseconds since 1970), so the editor can line them up with the video
+cmd_tracks() {
+    local dir=${1:-}
+    [[ -n $dir ]] || die "tracks: name the folder"
+    shift
+    (($#)) || die "tracks: name at least one source as <key>|<source>|<percent>"
+    command -v parecord >/dev/null || die "parecord is missing (libpulse)"
+    mkdir -p "$dir"
+    : >"$TRACKS"
+    local item key source percent name started list='[]'
+    for item in "$@"; do
+        IFS='|' read -r key source percent <<<"$item"
+        [[ -n $key && -n $source ]] || die "not <key>|<source>|<percent>: $item"
+        [[ $percent =~ ^[0-9]+$ ]] || percent=100
+        # "stream mix" → stream-mix.flac
+        name=$(tr -c 'A-Za-z0-9_\n-' '-' <<<"$key")
+        started=$(date +%s%3N)
+        parecord --device="$source" --file-format=flac "$dir/$name.flac" </dev/null >/dev/null 2>&1 &
+        echo "$!" >>"$TRACKS"
+        list=$(jq -c --arg k "$key" --arg f "$name.flac" --arg s "$source" \
+            --argjson t "$started" --argjson l "$percent" \
+            '. + [{ key: $k, file: $f, source: $s, started: $t, level: ($l / 100) }]' <<<"$list")
+    done
+    jq -n --argjson tracks "$list" '{ version: 1, tracks: $tracks }' >"$dir/tracks.json"
 }
 
 cmd_start() {
@@ -62,6 +109,7 @@ cmd_start() {
 
 case ${1:-} in
     start) shift; cmd_start "$@" ;;
+    tracks) shift; cmd_tracks "$@" ;;
     stop) cmd_stop ;;
-    *) die "usage: frame-record-mix start <source>=<percent> ... | stop" ;;
+    *) die "usage: frame-record-mix start <source>=<percent> ... | tracks <dir> <key>|<source>|<percent> ... | stop" ;;
 esac

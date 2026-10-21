@@ -17,8 +17,20 @@ import qs.config
 // chosen, frame-record-mix loops them into one sink that wf-recorder records
 // (quickshell/.local/bin/frame-record-mix). The choice is kept in
 // ~/.local/state/frameshell/record-audio.json.
+//
+// Next to the mixed sound every chosen channel is also recorded on its own, into
+// <recording>.tracks/ (one FLAC per channel, tracks.json, video-started), so the recording
+// editor (editor/, "edit" on the notification) can set each one's level afterwards.
 Singleton {
     id: root
+
+    // "edit" on the notification; editor/RecordingEditor.qml opens the file
+    signal editRequested(string file)
+
+    // The folder with the separate channels of a recording
+    function tracksDir(video) {
+        return video.replace(/\.[^./]+$/, "") + ".tracks";
+    }
 
     property bool recording: false
     property bool stopping: false
@@ -100,12 +112,15 @@ Singleton {
         const p = n => String(n).padStart(2, "0");
         file = `${folder}/recording-${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}.mp4`;
         const mix = chosen.map(c => `${c.source}=${Math.round(channelState(c.key).level * 100)}`);
+        const tracks = chosen.map(c => `${c.key}|${c.source}|${Math.round(channelState(c.key).level * 100)}`);
         mixing = mix.length > 0;
         if (mixing) {
-            // The mix first, then wf-recorder on its monitor: the sources come before "--", the
-            // area after it (bash, for the array)
-            proc.command = ["bash", "-c", 'mkdir -p "$(dirname "$1")" && f=$1 && m=$2 && shift 2 && srcs=() && while [ "$1" != "--" ]; do srcs+=("$1"); shift; done && shift && "$m" start "${srcs[@]}" >/dev/null && exec wf-recorder -f "$f" --audio=frame-rec.monitor "$@"',
-                "frame-record", file, mixTool].concat(mix).concat(["--"]).concat(args);
+            // The mix first, then every channel on its own track, then wf-recorder on the mix's
+            // monitor. The mix sources come before the first "--", the tracks before the
+            // second, the area after it (bash, for the arrays). video-started is the moment
+            // the picture starts, for lining the tracks up.
+            proc.command = ["bash", "-c", 'mkdir -p "$(dirname "$1")" && f=$1 && m=$2 && d=$3 && shift 3 && srcs=() && trk=() && while [ "$1" != "--" ]; do srcs+=("$1"); shift; done && shift && while [ "$1" != "--" ]; do trk+=("$1"); shift; done && shift && "$m" start "${srcs[@]}" >/dev/null && { "$m" tracks "$d" "${trk[@]}" || echo "frame-record: the separate tracks did not start" >&2; } && { date +%s%3N >"$d/video-started" 2>/dev/null || true; } && exec wf-recorder -f "$f" --audio=frame-rec.monitor "$@"',
+                "frame-record", file, mixTool, tracksDir(file)].concat(mix).concat(["--"]).concat(tracks).concat(["--"]).concat(args);
         } else {
             proc.command = ["sh", "-c", 'mkdir -p "$(dirname "$1")" && f=$1 && shift && exec wf-recorder -f "$f" "$@"', "frame-record", file].concat(args);
         }
@@ -155,6 +170,7 @@ Singleton {
                 body: name,
                 actions: [
                     { id: "open", label: "open", style: "ok" },
+                    { id: "edit", label: "edit", style: "" },
                     { id: "folder", label: "folder", style: "" },
                     { id: "copy", label: "copy", style: "" },
                     { id: "delete", label: "delete", style: "" }
@@ -162,13 +178,16 @@ Singleton {
                 onAction: id => {
                     if (id === "open")
                         Quickshell.execDetached(["xdg-open", file]);
+                    else if (id === "edit")
+                        root.editRequested(file);
                     else if (id === "folder")
                         Quickshell.execDetached(["xdg-open", root.folder]);
                     else if (id === "copy")
                         // As a file, so chat apps and file managers take the video itself
                         Quickshell.execDetached(["sh", "-c", 'printf "file://%s\\n" "$1" | wl-copy --type text/uri-list', "frame-record", file]);
                     else if (id === "delete")
-                        Quickshell.execDetached(["rm", "-f", file]);
+                        // With its separate tracks and the editor's project
+                        Quickshell.execDetached(["rm", "-rf", "--", file, root.tracksDir(file), file.replace(/\.[^./]+$/, "") + ".edit.json"]);
                 }
             });
         }

@@ -3,6 +3,7 @@ import Quickshell
 import qs.bar
 import qs.canvas
 import qs.controlcenter
+import qs.editor
 import qs.hotkeys
 import qs.keyboard
 import qs.launcher
@@ -116,4 +117,8 @@ ShellRoot {
     Screenshot {
         hidden: lock.active
     }
+
+    // Cuts, pictures, blur boxes and the channels' levels for a recording ("edit" on its
+    // notification); its own window, loaded only when used
+    RecordingEditor {}
 }
