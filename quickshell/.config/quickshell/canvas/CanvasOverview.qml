@@ -391,6 +391,7 @@ Scope {
             Repeater {
                 model: ScriptModel {
                     values: CanvasLayout.monitors
+                    objectProp: "name"
                 }
 
                 Item {
@@ -425,9 +426,13 @@ Scope {
                 }
             }
 
+            // Each delegate sticks to its window (address): without that a changed order in
+            // the list handed delegates another window, and the capture kept showing the
+            // old one's picture when the new one gave no frame
             Repeater {
                 model: ScriptModel {
                     values: CanvasLayout.windows
+                    objectProp: "address"
                 }
 
                 Item {
@@ -464,10 +469,22 @@ Scope {
                         paintCursor: false
                     }
 
+                    // Hyprland gives no picture of a window that lies fully off every screen:
+                    // the last one taken while it was on one (CanvasThumbs.qml)
+                    Image {
+                        id: cached
+                        anchors.fill: parent
+                        visible: !preview.hasContent && source != ""
+                        source: Thumbnails.url(win.modelData.address)
+                        asynchronous: true
+                        cache: false
+                        fillMode: Image.Stretch
+                    }
+
                     // No preview yet (or the window has none): class and title
                     Column {
                         anchors.centerIn: parent
-                        visible: !preview.hasContent
+                        visible: !preview.hasContent && !cached.visible
                         width: parent.width - 24
                         spacing: 4
                         Text {

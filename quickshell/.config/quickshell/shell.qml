@@ -111,6 +111,9 @@ ShellRoot {
     // Infinite canvas: dragging empty canvas moves the view
     CanvasDesk {}
 
+    // Infinite canvas: pictures of the windows on screen, for the overview's off-screen ones
+    CanvasThumbs {}
+
     // Shows fader, mute, volume and layout changes; never on the lockscreen
     Osd {
         hidden: lock.active
