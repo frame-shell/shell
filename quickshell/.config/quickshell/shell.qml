@@ -14,6 +14,7 @@ import qs.notifications
 import qs.osd
 import qs.screenshot
 import qs.services
+import qs.settings
 import qs.wallpapers
 
 // Entry point. Each module is added here as it gets built.
@@ -61,6 +62,7 @@ ShellRoot {
         onLockRequested: lock.lock()
         onWallpapersRequested: wallpapers.show()
         onKeyboardRequested: keyboard.show()
+        onSettingsRequested: settings.show()
     }
 
     Launcher {
@@ -126,5 +128,13 @@ ShellRoot {
     // Screenshots and recordings: browse, delete many at once, open in the editor (Super+G)
     MediaApp {
         id: media
+    }
+
+    // Theme, layout, the shell's own settings, sound, modules and system (Super+, or
+    // "settings" in the control center)
+    SettingsApp {
+        id: settings
+        onWallpapersRequested: wallpapers.show()
+        onKeyboardRequested: keyboard.show()
     }
 }

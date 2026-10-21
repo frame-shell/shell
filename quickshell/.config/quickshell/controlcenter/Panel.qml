@@ -18,6 +18,7 @@ Item {
     signal lockRequested()
     signal wallpapersRequested()
     signal keyboardRequested()
+    signal settingsRequested()
 
     // Reboot and shutdown wait for a second click
     property string armed: ""
@@ -252,10 +253,25 @@ Item {
             label: "toggles"
             implicitHeight: toggleGrid.implicitHeight + 36
 
-            // Open the separate keyboard (Super+K) and wallpaper (Super+W) apps
+            // Open the separate settings (Super+,), keyboard (Super+K) and wallpaper (Super+W) apps
             Row {
                 anchors { right: parent.right; top: parent.top; topMargin: -16 - 12 }
                 spacing: 8
+
+                TuiButton {
+                    implicitWidth: settingsLabel.implicitWidth + 20
+                    implicitHeight: 24
+                    color: Theme.bg
+                    onClicked: root.settingsRequested()
+
+                    Label {
+                        id: settingsLabel
+                        anchors.centerIn: parent
+                        text: "settings ›"
+                        color: Theme.secondary
+                        font.pixelSize: 14
+                    }
+                }
 
                 TuiButton {
                     implicitWidth: keyboardLabel.implicitWidth + 20

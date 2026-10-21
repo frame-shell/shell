@@ -14,6 +14,7 @@ Scope {
     signal lockRequested()
     signal wallpapersRequested()
     signal keyboardRequested()
+    signal settingsRequested()
 
     property bool open: false
     property bool mixerOpen: false
@@ -112,6 +113,10 @@ Scope {
                 onKeyboardRequested: {
                     root.hide();
                     root.keyboardRequested();
+                }
+                onSettingsRequested: {
+                    root.hide();
+                    root.settingsRequested();
                 }
                 onLockRequested: {
                     root.hide();
