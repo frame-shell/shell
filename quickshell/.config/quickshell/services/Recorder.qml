@@ -24,9 +24,6 @@ import qs.config
 Singleton {
     id: root
 
-    // "edit" on the notification; editor/RecordingEditor.qml opens the file
-    signal editRequested(string file)
-
     // The folder with the separate channels of a recording
     function tracksDir(video) {
         return video.replace(/\.[^./]+$/, "") + ".tracks";
@@ -179,7 +176,7 @@ Singleton {
                     if (id === "open")
                         Quickshell.execDetached(["xdg-open", file]);
                     else if (id === "edit")
-                        root.editRequested(file);
+                        Editor.open(file);
                     else if (id === "folder")
                         Quickshell.execDetached(["xdg-open", root.folder]);
                     else if (id === "copy")

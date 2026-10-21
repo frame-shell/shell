@@ -129,12 +129,16 @@ Scope {
                 image: file,
                 actions: [
                     { id: "open", label: "open", style: "ok" },
+                    { id: "edit", label: "edit", style: "" },
                     { id: "folder", label: "folder", style: "" },
                     { id: "delete", label: "delete", style: "" }
                 ],
                 onAction: id => {
                     if (id === "open")
                         Quickshell.execDetached(["xdg-open", file]);
+                    else if (id === "edit")
+                        // Blur a name, put a picture on it, crop (editor/ImageEditorView.qml)
+                        Editor.open(file);
                     else if (id === "folder")
                         Quickshell.execDetached(["xdg-open", root.folder]);
                     else if (id === "delete")

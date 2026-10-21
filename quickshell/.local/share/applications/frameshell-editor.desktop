@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=frameshell editor
+Comment=Blur, crop and cut screenshots and recordings
+Exec=qs ipc call editor open %f
+Icon=applications-graphics
+MimeType=image/png;image/jpeg;image/webp;image/gif;image/bmp;video/mp4;video/x-matroska;video/webm;video/quicktime;
+Categories=Graphics;AudioVideo;
+NoDisplay=true
+Terminal=false

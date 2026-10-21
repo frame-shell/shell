@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=frameshell media
+Comment=Screenshots and recordings: browse, delete, open in the editor
+Exec=qs ipc call media open
+Icon=folder-pictures
+Categories=Graphics;Utility;
+Terminal=false

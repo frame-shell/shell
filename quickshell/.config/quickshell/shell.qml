@@ -4,6 +4,7 @@ import qs.bar
 import qs.canvas
 import qs.controlcenter
 import qs.editor
+import qs.gallery
 import qs.hotkeys
 import qs.keyboard
 import qs.launcher
@@ -118,7 +119,12 @@ ShellRoot {
         hidden: lock.active
     }
 
-    // Cuts, pictures, blur boxes and the channels' levels for a recording ("edit" on its
-    // notification); its own window, loaded only when used
-    RecordingEditor {}
+    // Editors for recordings (cuts, blur boxes, pictures, levels per channel) and pictures
+    // (blur, pictures, crop): "edit" on a notification or in the media app; own window
+    EditorWindow {}
+
+    // Screenshots and recordings: browse, delete many at once, open in the editor (Super+G)
+    MediaApp {
+        id: media
+    }
 }

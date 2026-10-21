@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+# frame-media – the files behind the media app (media/MediaApp.qml, Super+G).
+#
+#   frame-media list <dir> ...       every picture and video in these folders, newest first, one
+#                                    line each: <mtime>\t<bytes>\t<image|video>\t<path>\t<edited 0|1>\t<tracks 0|1>
+#                                    (edited: <name>.edit.json is there, tracks: <name>.tracks/)
+#   frame-media thumb <video> <jpg>  a frame from one second in as a 400 px wide JPEG, made once;
+#                                    prints the video's length in seconds
+#   frame-media trash <file> ...     into the trash, with what belongs to it (<name>.tracks/,
+#                                    <name>.edit.json); gio comes with glib2
+set -euo pipefail
+
+die() {
+    echo "frame-media: $*" >&2
+    exit 1
+}
+
+cmd_list() {
+    local dirs=() d
+    for d in "$@"; do [[ -d $d ]] && dirs+=("$d"); done
+    ((${#dirs[@]})) || return 0
+    local t size path kind stem edited tracks
+    find "${dirs[@]}" -maxdepth 1 -type f \( -iname '*.png' -o -iname '*.jpg' -o -iname '*.jpeg' \
+        -o -iname '*.webp' -o -iname '*.gif' -o -iname '*.mp4' -o -iname '*.mkv' -o -iname '*.webm' \
+        -o -iname '*.mov' \) -printf '%T@\t%s\t%p\n' 2>/dev/null | sort -rn | awk -F'\t' '!seen[$3]++' \
+        | while IFS=$'\t' read -r t size path; do
+            case ${path,,} in
+                *.mp4 | *.mkv | *.webm | *.mov) kind=video ;;
+                *) kind=image ;;
+            esac
+            stem=${path%.*}
+            edited=0
+            tracks=0
+            [[ -f $stem.edit.json ]] && edited=1
+            [[ -d $stem.tracks ]] && tracks=1
+            printf '%s\t%s\t%s\t%s\t%s\t%s\n' "${t%.*}" "$size" "$kind" "$path" "$edited" "$tracks"
+        done
+}
+
+cmd_thumb() {
+    local video=${1:-} out=${2:-}
+    [[ -f $video && -n $out ]] || die "thumb: name the video and the picture to write"
+    if [[ ! -s $out ]]; then
+        mkdir -p "$(dirname "$out")"
+        # Short clips have no second one; then the first frame
+        ffmpeg -nostdin -v error -y -ss 1 -i "$video" -frames:v 1 -vf scale=400:-2 "$out" 2>/dev/null \
+            || ffmpeg -nostdin -v error -y -i "$video" -frames:v 1 -vf scale=400:-2 "$out" 2>/dev/null \
+            || true
+    fi
+    ffprobe -v error -show_entries format=duration -of default=nw=1:nk=1 "$video" 2>/dev/null || echo 0
+}
+
+cmd_trash() {
+    (($#)) || die "trash: name at least one file"
+    command -v gio >/dev/null || die "gio is missing (glib2)"
+    local f stem
+    for f in "$@"; do
+        [[ -e $f ]] || continue
+        stem=${f%.*}
+        gio trash -- "$f"
+        [[ -d $stem.tracks ]] && gio trash -- "$stem.tracks"
+        [[ -f $stem.edit.json ]] && gio trash -- "$stem.edit.json"
+    done
+    return 0
+}
+
+case ${1:-} in
+    list) shift; cmd_list "$@" ;;
+    thumb) shift; cmd_thumb "$@" ;;
+    trash) shift; cmd_trash "$@" ;;
+    *) die "usage: frame-media list <dir> ... | thumb <video> <jpg> | trash <file> ..." ;;
+esac

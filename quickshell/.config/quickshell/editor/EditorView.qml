@@ -1,5 +1,4 @@
 import QtQuick
-import QtQuick.Effects
 import QtQuick.Layouts
 import QtMultimedia
 import Quickshell
@@ -8,7 +7,7 @@ import qs.config
 
 // The recording editor's window content: preview with the pictures and blur boxes on top,
 // the inspector for what is selected, the transport and the timeline (EditorTimeline.qml).
-// Loaded only when the editor opens (RecordingEditor.qml), so a missing Qt Multimedia
+// Loaded only when a video opens (EditorWindow.qml), so a missing Qt Multimedia
 // (qt6-multimedia-ffmpeg) costs the editor, never the shell.
 //
 // Playback: the video plays in its own player and every separate track in one of its own,
@@ -344,147 +343,19 @@ FocusScope {
 
                             Repeater {
                                 model: project.overlays.length
-                                delegate: Item {
-                                    id: ov
-
+                                delegate: OverlayBox {
                                     required property int index
-                                    readonly property var o: project.overlays[index] ?? null
-                                    readonly property bool shown: o !== null && root.playhead >= o.start && root.playhead < o.end
-                                    readonly property bool isSelected: o !== null && root.selOverlay !== null && root.selOverlay.id === o.id
 
-                                    visible: shown
-                                    x: (o?.x ?? 0) * frameArea.width
-                                    y: (o?.y ?? 0) * frameArea.height
-                                    width: (o?.w ?? 0.1) * frameArea.width
-                                    height: (o && o.h > 0 ? o.h : (o?.w ?? 0.1)) * frameArea.height
-
-                                    // Blur: the video under the box, through the blur or shrunk to blocks (pixelate)
-                                    ShaderEffectSource {
-                                        id: under
-
-                                        anchors.fill: parent
-                                        visible: ov.o?.type === "blur" && ov.o.style === "pixel"
-                                        sourceItem: ov.o?.type === "blur" ? video : null
-                                        sourceRect: Qt.rect(frameArea.x + ov.x, frameArea.y + ov.y, ov.width, ov.height)
-                                        live: true
-                                        smooth: false
-                                        textureSize: ov.o?.style === "pixel"
-                                            ? Qt.size(Math.max(1, Math.round(ov.width / Math.max(4, ov.o.strength * 1.4 * frameArea.width / Math.max(1, project.videoWidth)))),
-                                                      Math.max(1, Math.round(ov.height / Math.max(4, ov.o.strength * 1.4 * frameArea.width / Math.max(1, project.videoWidth)))))
-                                            : Qt.size(Math.max(1, ov.width), Math.max(1, ov.height))
-                                    }
-
-                                    MultiEffect {
-                                        anchors.fill: parent
-                                        visible: ov.o?.type === "blur" && ov.o.style !== "pixel"
-                                        source: under
-                                        autoPaddingEnabled: false
-                                        blurEnabled: true
-                                        blur: 1
-                                        blurMax: Math.max(8, Math.min(64, Math.round((ov.o?.strength ?? 14) * 3)))
-                                    }
-
-                                    Image {
-                                        anchors.fill: parent
-                                        visible: ov.o?.type === "picture"
-                                        source: ov.o?.type === "picture" ? root.fileUrl(ov.o.src) : ""
-                                        opacity: ov.o?.opacity ?? 1
-                                        asynchronous: true
-                                        fillMode: Image.Stretch
-                                        // A new picture keeps its own shape
-                                        onStatusChanged: {
-                                            if (status === Image.Ready && ov.o && ov.o.h < 0 && implicitWidth > 0 && frameArea.height > 0) {
-                                                const h = ov.o.w * frameArea.width * implicitHeight / implicitWidth / frameArea.height;
-                                                project.updateOverlay(ov.o.id, { h: Math.min(1 - ov.o.y, h) }, false);
-                                            }
-                                        }
-                                    }
-
-                                    Rectangle {
-                                        anchors.fill: parent
-                                        color: "transparent"
-                                        border.width: 1
-                                        border.color: ov.o?.type === "blur" ? Theme.warn : Theme.secondary
-                                        visible: ov.isSelected || move.containsMouse
-                                        opacity: ov.isSelected ? 1 : 0.5
-                                    }
-
-                                    Rectangle {
-                                        visible: ov.isSelected
-                                        y: -height
-                                        width: tag.implicitWidth + 10
-                                        height: tag.implicitHeight + 2
-                                        color: ov.o?.type === "blur" ? Theme.warn : Theme.secondary
-
-                                        Text {
-                                            id: tag
-                                            anchors.centerIn: parent
-                                            text: ov.o?.name ?? ""
-                                            color: Theme.bg
-                                            font.family: Theme.font
-                                            font.pixelSize: 11
-                                        }
-                                    }
-
-                                    MouseArea {
-                                        id: move
-
-                                        property point start
-                                        property var from
-
-                                        anchors.fill: parent
-                                        hoverEnabled: true
-                                        cursorShape: Qt.SizeAllCursor
-                                        onPressed: mouse => {
-                                            root.select({ kind: "overlay", id: ov.o.id });
-                                            root.forceActiveFocus();
-                                            project.snapshot();
-                                            start = mapToItem(frameArea, mouse.x, mouse.y);
-                                            from = { x: ov.o.x, y: ov.o.y };
-                                        }
-                                        onPositionChanged: mouse => {
-                                            if (!pressed)
-                                                return;
-                                            const p = mapToItem(frameArea, mouse.x, mouse.y);
-                                            const h = ov.o.h > 0 ? ov.o.h : ov.o.w;
-                                            project.updateOverlay(ov.o.id, {
-                                                x: Math.max(0, Math.min(1 - ov.o.w, from.x + (p.x - start.x) / frameArea.width)),
-                                                y: Math.max(0, Math.min(1 - h, from.y + (p.y - start.y) / frameArea.height))
-                                            }, false);
-                                        }
-                                    }
-
-                                    // Bottom right: size
-                                    Rectangle {
-                                        visible: ov.isSelected
-                                        x: parent.width - 6
-                                        y: parent.height - 6
-                                        width: 12
-                                        height: 12
-                                        color: ov.o?.type === "blur" ? Theme.warn : Theme.secondary
-
-                                        MouseArea {
-                                            property point start
-                                            property var from
-
-                                            anchors.fill: parent
-                                            anchors.margins: -4
-                                            cursorShape: Qt.SizeFDiagCursor
-                                            onPressed: mouse => {
-                                                project.snapshot();
-                                                start = mapToItem(frameArea, mouse.x, mouse.y);
-                                                from = { w: ov.o.w, h: ov.o.h > 0 ? ov.o.h : ov.o.w };
-                                            }
-                                            onPositionChanged: mouse => {
-                                                if (!pressed)
-                                                    return;
-                                                const p = mapToItem(frameArea, mouse.x, mouse.y);
-                                                project.updateOverlay(ov.o.id, {
-                                                    w: Math.max(0.02, Math.min(1 - ov.o.x, from.w + (p.x - start.x) / frameArea.width)),
-                                                    h: Math.max(0.02, Math.min(1 - ov.o.y, from.h + (p.y - start.y) / frameArea.height))
-                                                }, false);
-                                            }
-                                        }
+                                    o: project.overlays[index] ?? null
+                                    store: project
+                                    frame: frameArea
+                                    capture: video
+                                    nativeWidth: project.videoWidth
+                                    shown: o !== null && root.playhead >= o.start && root.playhead < o.end
+                                    selected: o !== null && root.selOverlay !== null && root.selOverlay.id === o.id
+                                    onPicked: {
+                                        root.select({ kind: "overlay", id: o.id });
+                                        root.forceActiveFocus();
                                     }
                                 }
                             }

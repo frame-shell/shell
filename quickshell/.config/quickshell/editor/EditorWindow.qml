@@ -4,21 +4,27 @@ import Quickshell.Io
 import qs.config
 import qs.services
 
-// The recording editor as its own window: "edit" on a recording's notification, or
-// `qs ipc call editor open <video>`. The view comes in through a Loader, so without Qt
-// Multimedia (qt6-multimedia-ffmpeg) only the editor is missing and it says so.
+// The editor as its own window, for a video (EditorView: cuts, blur boxes, pictures, levels per
+// channel) or a picture (ImageEditorView: blur boxes, pictures, crop). Opened through the Editor
+// service: "edit" on a notification, the media app, or `qs ipc call editor open <file>`.
+// The views come in through a Loader, so without Qt Multimedia (qt6-multimedia-ffmpeg) only
+// the video editor is missing and it says so.
 Scope {
     id: root
 
     property bool open: false
     property string file: ""
+    readonly property string view: Editor.isVideo(file) ? "EditorView.qml" : "ImageEditorView.qml"
 
     function openFile(path) {
         if (path === "")
             return;
+        if (loader.item)
+            loader.item.project.writeNow();
         file = path;
         open = true;
-        if (loader.item)
+        // The same kind of view takes the new file; the other kind loads with it
+        if (loader.item && loader.source.toString().endsWith(view))
             loader.item.openFile(path);
     }
 
@@ -31,9 +37,9 @@ Scope {
     }
 
     Connections {
-        target: Recorder
+        target: Editor
 
-        function onEditRequested(file) {
+        function onOpenRequested(file) {
             root.openFile(file);
         }
     }
@@ -42,7 +48,7 @@ Scope {
         id: window
 
         visible: root.open
-        title: "frameshell · recording editor"
+        title: Editor.isVideo(root.file) ? "frameshell · video editor" : "frameshell · picture editor"
         implicitWidth: 1480
         implicitHeight: 940
         color: Theme.bg
@@ -58,7 +64,7 @@ Scope {
 
             anchors.fill: parent
             active: root.open
-            source: "EditorView.qml"
+            source: root.view
             onLoaded: {
                 item.closeRequested.connect(root.hide);
                 item.openFile(root.file);
@@ -68,10 +74,12 @@ Scope {
                     return;
                 root.open = false;
                 Notifications.push({
-                    app: "recording",
+                    app: "editor",
                     glyph: "✗",
-                    title: "editor needs Qt Multimedia",
-                    body: "sudo pacman -S qt6-multimedia-ffmpeg, then try again"
+                    title: "the editor did not start",
+                    body: Editor.isVideo(root.file)
+                        ? "videos need Qt Multimedia: sudo pacman -S qt6-multimedia-ffmpeg"
+                        : "see qs log for the error"
                 });
             }
         }
@@ -81,7 +89,7 @@ Scope {
         target: "editor"
 
         function open(path: string): void {
-            root.openFile(path);
+            Editor.open(path);
         }
 
         function close(): void {
