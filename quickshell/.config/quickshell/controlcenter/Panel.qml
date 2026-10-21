@@ -13,7 +13,9 @@ Item {
 
     property real progress: 1
     property bool mixerOpen: false
+    property bool tasksOpen: false
     signal mixerToggled()
+    signal tasksToggled()
     signal closeRequested()
     signal lockRequested()
     signal wallpapersRequested()
@@ -480,6 +482,24 @@ Item {
             index: 3
             label: "system"
             implicitHeight: stats.implicitHeight + 36
+
+            // The task manager opens beside the panel, like the app mixer
+            TuiButton {
+                anchors { right: parent.right; top: parent.top; topMargin: -16 - height / 2 }
+                implicitWidth: tasksLabel.implicitWidth + 20
+                implicitHeight: 24
+                color: active ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.14) : Theme.bg
+                active: root.tasksOpen
+                onClicked: root.tasksToggled()
+
+                Label {
+                    id: tasksLabel
+                    anchors.centerIn: parent
+                    text: "tasks ›"
+                    color: Theme.secondary
+                    font.pixelSize: 14
+                }
+            }
 
             StatsSection {
                 id: stats

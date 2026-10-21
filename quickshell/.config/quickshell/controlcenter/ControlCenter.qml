@@ -6,8 +6,9 @@ import Quickshell.Wayland
 import qs.config
 import qs.services
 
-// Control center under the bar on the right, the app mixer opens beside it.
-// `qs ipc call controlcenter toggle` (Super+C) or the button in the bar.
+// Control center under the bar on the right, the app mixer or the task manager opens
+// beside it. `qs ipc call controlcenter toggle` (Super+C) or the button in the bar;
+// `qs ipc call controlcenter tasks` opens it with the task manager.
 Scope {
     id: root
 
@@ -18,6 +19,7 @@ Scope {
 
     property bool open: false
     property bool mixerOpen: false
+    property bool tasksOpen: false
 
     property real shown: open ? 1 : 0
     Behavior on shown {
@@ -26,6 +28,23 @@ Scope {
     property real mixerShown: open && mixerOpen ? 1 : 0
     Behavior on mixerShown {
         NumberAnimation { duration: root.mixerOpen ? Theme.anim.normal : Theme.anim.fast; easing.type: Easing.OutCubic }
+    }
+    property real tasksShown: open && tasksOpen ? 1 : 0
+    Behavior on tasksShown {
+        NumberAnimation { duration: root.tasksOpen ? Theme.anim.normal : Theme.anim.fast; easing.type: Easing.OutCubic }
+    }
+
+    // Only one side panel at a time
+    function setMixer(on) {
+        mixerOpen = on;
+        if (on)
+            tasksOpen = false;
+    }
+
+    function setTasks(on) {
+        tasksOpen = on;
+        if (on)
+            mixerOpen = false;
     }
 
     function show(screen) {
@@ -39,6 +58,7 @@ Scope {
     function hide() {
         open = false;
         mixerOpen = false;
+        tasksOpen = false;
         GoXLR.fast = false;
     }
 
@@ -52,6 +72,13 @@ Scope {
     function focusedScreen() {
         const name = Hyprland.focusedMonitor?.name;
         return Quickshell.screens.find(s => s.name === name) ?? Quickshell.screens[0];
+    }
+
+    // The task list is only read while it is on screen
+    Binding {
+        target: Tasks
+        property: "active"
+        value: root.open && root.tasksOpen
     }
 
     // Lock once the panel has faded, so the lockscreen snapshot does not show it
@@ -87,9 +114,10 @@ Scope {
             anchors.fill: parent
             focus: root.open
             Keys.onEscapePressed: {
-                if (root.mixerOpen)
+                if (root.mixerOpen || root.tasksOpen) {
                     root.mixerOpen = false;
-                else
+                    root.tasksOpen = false;
+                } else
                     root.hide();
             }
 
@@ -101,10 +129,12 @@ Scope {
                 height: implicitHeight
                 progress: root.shown
                 mixerOpen: root.mixerOpen
+                tasksOpen: root.tasksOpen
                 opacity: root.shown
                 transform: Translate { y: -14 * (1 - root.shown) }
 
-                onMixerToggled: root.mixerOpen = !root.mixerOpen
+                onMixerToggled: root.setMixer(!root.mixerOpen)
+                onTasksToggled: root.setTasks(!root.tasksOpen)
                 onCloseRequested: root.hide()
                 onWallpapersRequested: {
                     root.hide();
@@ -132,6 +162,15 @@ Scope {
                 opacity: root.mixerShown
                 transform: Translate { x: 18 * (1 - root.mixerShown) }
             }
+
+            TaskManager {
+                anchors { right: panel.left; top: panel.top; rightMargin: 12 }
+                width: 680
+                height: implicitHeight
+                visible: root.tasksShown > 0.01
+                opacity: root.tasksShown
+                transform: Translate { x: 18 * (1 - root.tasksShown) }
+            }
         }
     }
 
@@ -148,6 +187,11 @@ Scope {
 
         function close(): void {
             root.hide();
+        }
+
+        function tasks(): void {
+            root.show(null);
+            root.setTasks(true);
         }
     }
 }
