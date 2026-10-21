@@ -123,6 +123,12 @@ FocusScope {
         selected = s;
     }
 
+    // Zoom so the whole output fits the lanes, within the zoom slider's range
+    function fitZoom() {
+        if (project.outLen > 0)
+            pps = Math.max(4, Math.min(60, (timeline.width - timeline.labelW - 100) / project.outLen));
+    }
+
     // ── Editing ──────────────────────────────────────────────
 
     function cut() {
@@ -193,8 +199,9 @@ FocusScope {
             }
         }
         onDurationChanged: {
-            if (duration > 0) {
-                project.setDuration(duration / 1000);
+            if (player.duration > 0) {
+                project.setDuration(player.duration / 1000);
+                root.fitZoom();
                 root.seek(root.playhead);
             }
         }
@@ -296,10 +303,10 @@ FocusScope {
         anchors.topMargin: 26
         spacing: 26
 
+        // Preview and inspector take what the timeline leaves
         RowLayout {
             Layout.fillWidth: true
             Layout.fillHeight: true
-            Layout.preferredHeight: 3
             spacing: 22
 
             Frame {
@@ -435,7 +442,9 @@ FocusScope {
                             color: Theme.muted
                             text: project.separateTracks
                                 ? `${project.tracks.length} channels on their own tracks`
-                                : "the recording's own sound (no separate tracks: none were chosen while recording)"
+                                : project.videoHasAudio
+                                    ? "the recording's own sound (no separate tracks: none were chosen while recording)"
+                                    : "no sound: the recording was made without a channel"
                         }
                         Label {
                             Layout.fillWidth: true
@@ -463,6 +472,7 @@ FocusScope {
                         Label { text: parent.o?.name ?? ""; color: Theme.text; Layout.fillWidth: true }
                         Label {
                             Layout.fillWidth: true
+                            wrapMode: Text.Wrap
                             color: Theme.muted
                             text: parent.o ? `${parent.o.type === "blur" ? "hides what is under it" : "shown"} from ${root.fmt(parent.o.start)} to ${root.fmt(parent.o.end)}` : ""
                         }
@@ -639,11 +649,14 @@ FocusScope {
             }
         }
 
+        // As tall as its rows need (ruler, video, blur, pictures, one per channel), at most a bit
+        // under half the window; more rows scroll (shift+wheel). A preferred height is a weight
+        // for Qt's layouts, so a small one next to a minimum would starve the preview.
         Frame {
+            id: timelineFrame
+
             Layout.fillWidth: true
-            Layout.fillHeight: true
-            Layout.preferredHeight: 2
-            Layout.minimumHeight: 300
+            Layout.preferredHeight: Math.max(220, Math.min(Math.round(root.height * 0.45), timeline.contentH + 90))
             label: "timeline"
             padding: 16
 
@@ -758,6 +771,8 @@ FocusScope {
                 }
 
                 EditorTimeline {
+                    id: timeline
+
                     Layout.fillWidth: true
                     Layout.fillHeight: true
                     editor: root
