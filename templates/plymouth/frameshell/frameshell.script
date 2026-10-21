@@ -80,7 +80,20 @@ status.SetPosition(bar_x, box_y + 84, 10);
 fun say(text, c) {
     status.SetImage(Image.Text(text, c.r, c.g, c.b, 1, FONT + " 12"));
 }
-say("starting", dim);
+
+# The same splash shows at boot, shutdown and restart; the status line says which
+mode = Plymouth.GetMode();
+if (mode == "shutdown")
+    state_text = "shutting down";
+else if (mode == "reboot")
+    state_text = "restarting";
+else if (mode == "updates" || mode == "system-upgrade" || mode == "firmware-upgrade")
+    state_text = "installing updates";
+else if (mode == "resume")
+    state_text = "waking up";
+else
+    state_text = "starting";
+say(state_text, dim);
 
 fun message_callback(text) {
     say(text, dim);
@@ -106,7 +119,7 @@ fun question_callback(prompt, entry) {
 Plymouth.SetDisplayQuestionFunction(question_callback);
 
 fun normal_callback() {
-    say("starting", dim);
+    say(state_text, dim);
 }
 Plymouth.SetDisplayNormalFunction(normal_callback);
 
