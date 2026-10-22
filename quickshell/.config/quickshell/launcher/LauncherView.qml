@@ -33,6 +33,11 @@ Item {
     readonly property int maxRows: 9
     // Long lists (emoji, files, clipboard) scroll in windows of maxRows
     readonly property int first: Math.max(0, Math.min(current - maxRows + 1, results.length - maxRows))
+    // Claude has answered the question that is typed: the launcher grows to (almost) the
+    // whole screen (Launcher.qml) and shows the answer as selectable text instead of the list
+    readonly property bool answering: selected?.kind === "claude" && selected.answered === true
+    // "copied …" under the answer for a moment after a copy
+    property string copied: ""
 
     // Tab keeps the text, so a new mode also searches what is already typed
     onModeChanged: {
@@ -81,6 +86,29 @@ Item {
     function setMode(next) {
         input.text = modes.prefix(next) + rest;
         input.forceActiveFocus();
+    }
+
+    // Ctrl+C in the answer view: the selected part of the answer, else all of it
+    function copyAnswer(all) {
+        const part = all ? "" : answerText.selectedText;
+        modes.copy(part !== "" ? part : Claude.answer);
+        copied = part !== "" ? `copied ${part.length} of ${Claude.answer.length} characters` : "copied the whole answer";
+        copiedTimer.restart();
+    }
+
+    function scrollAnswer(by) {
+        answerFlick.contentY = Math.max(0, Math.min(answerFlick.contentY + by, answerFlick.contentHeight - answerFlick.height));
+    }
+
+    Timer {
+        id: copiedTimer
+        interval: 2200
+        onTriggered: root.copied = ""
+    }
+
+    onAnsweringChanged: {
+        copied = "";
+        answerFlick.contentY = 0;
     }
 
     function activate(shift) {
@@ -173,6 +201,35 @@ Item {
                     }
 
                     Keys.onPressed: event => {
+                        // The answer view: arrows and page keys scroll the answer, Ctrl+C copies
+                        // it (the query line's own selection still wins, so editing stays normal)
+                        if (root.answering) {
+                            const ctrl = (event.modifiers & Qt.ControlModifier) !== 0;
+                            const page = answerFlick.height - 60;
+                            let handled = true;
+                            if (ctrl && event.key === Qt.Key_C && input.selectedText === "")
+                                root.copyAnswer(false);
+                            else if (event.key === Qt.Key_Down)
+                                root.scrollAnswer(60);
+                            else if (event.key === Qt.Key_Up)
+                                root.scrollAnswer(-60);
+                            else if (event.key === Qt.Key_PageDown)
+                                root.scrollAnswer(page);
+                            else if (event.key === Qt.Key_PageUp)
+                                root.scrollAnswer(-page);
+                            else if (ctrl && event.key === Qt.Key_Home)
+                                root.scrollAnswer(-answerFlick.contentHeight);
+                            else if (ctrl && event.key === Qt.Key_End)
+                                root.scrollAnswer(answerFlick.contentHeight);
+                            else if (event.key === Qt.Key_Escape && answerText.selectedText !== "")
+                                answerText.deselect();
+                            else
+                                handled = false;
+                            if (handled) {
+                                event.accepted = true;
+                                return;
+                            }
+                        }
                         switch (event.key) {
                         case Qt.Key_Down:
                             root.move(1);
@@ -218,10 +275,132 @@ Item {
 
             Divider { Layout.fillWidth: true }
 
+            // Claude's answer, over the whole launcher: selectable, scrolls, copy button
+            Item {
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                visible: root.answering
+
+                ColumnLayout {
+                    anchors.fill: parent
+                    anchors.leftMargin: 48
+                    anchors.rightMargin: 48
+                    anchors.topMargin: 30
+                    anchors.bottomMargin: 24
+                    spacing: 18
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 16
+
+                        AppIcon {
+                            glyph: "c"
+                            tint: Theme.accent
+                        }
+
+                        Label {
+                            Layout.fillWidth: true
+                            text: `── claude · ${Config.claudeModel || "cli default"} · ${Claude.answer.length} characters`
+                            color: Theme.muted
+                            elide: Text.ElideRight
+                        }
+
+                        Label {
+                            visible: root.copied !== ""
+                            text: root.copied
+                            color: Theme.ok
+                            font.pixelSize: Theme.size.small
+                        }
+
+                        TuiButton {
+                            implicitWidth: copyLabel.implicitWidth + 32
+                            implicitHeight: copyLabel.implicitHeight + 14
+                            accent: Theme.accent
+                            active: root.copied !== ""
+                            onClicked: root.copyAnswer(true)
+
+                            Label {
+                                id: copyLabel
+                                anchors.centerIn: parent
+                                text: "⧉ copy answer"
+                                color: parent.hovered ? Theme.text : Theme.secondary
+                                font.pixelSize: Theme.size.small
+                            }
+                        }
+                    }
+
+                    Rectangle {
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        color: Theme.surface
+                        border.width: 1
+                        border.color: Theme.border
+
+                        // Wheel scrolls; a press and drag selects text instead of flicking
+                        Flickable {
+                            id: answerFlick
+
+                            anchors.fill: parent
+                            anchors.margins: 1
+                            anchors.rightMargin: 12
+                            contentWidth: width
+                            contentHeight: answerText.implicitHeight + 64
+                            clip: true
+                            interactive: false
+                            boundsBehavior: Flickable.StopAtBounds
+
+                            TextEdit {
+                                id: answerText
+
+                                x: 40
+                                y: 32
+                                // Lines stay readable on a wide screen
+                                width: Math.min(answerFlick.width - 80, 1500)
+                                text: root.answering ? Claude.answer : ""
+                                readOnly: true
+                                selectByMouse: true
+                                // The query line keeps the keyboard, so typing still edits the question
+                                activeFocusOnPress: false
+                                persistentSelection: true
+                                wrapMode: TextEdit.Wrap
+                                textFormat: TextEdit.PlainText
+                                color: Theme.text
+                                selectionColor: Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.55)
+                                selectedTextColor: Theme.text
+                                font.family: Theme.font
+                                font.pixelSize: 22
+
+                                MouseArea {
+                                    anchors.fill: parent
+                                    acceptedButtons: Qt.NoButton
+                                    cursorShape: Qt.IBeamCursor
+                                }
+                            }
+                        }
+
+                        WheelHandler {
+                            target: null
+                            onWheel: event => root.scrollAnswer(-event.angleDelta.y)
+                        }
+
+                        // Scroll position, only when the answer is longer than the box
+                        Rectangle {
+                            visible: answerFlick.contentHeight > answerFlick.height
+                            x: parent.width - 8
+                            y: 4 + (parent.height - 8 - height) * (answerFlick.contentY / Math.max(1, answerFlick.contentHeight - answerFlick.height))
+                            width: 3
+                            height: Math.max(40, (parent.height - 8) * answerFlick.height / Math.max(1, answerFlick.contentHeight))
+                            color: Theme.frame
+                        }
+                    }
+                }
+            }
+
             // Results and info pane
             RowLayout {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
+                visible: !root.answering
                 spacing: 0
 
                 Item {
@@ -603,7 +782,7 @@ Item {
                     color: root.armed !== "" ? Theme.warn : Theme.frame
                     font.pixelSize: Theme.size.small
                     elide: Text.ElideLeft
-                    Layout.maximumWidth: 420
+                    Layout.maximumWidth: root.answering ? 900 : 420
                 }
             }
         }
