@@ -98,8 +98,11 @@ Singleton {
         const device = findDevice(isRecording(node) ? sources : sinks, map[route]);
         if (!device)
             return;
-        // pipewire-pulse uses the PipeWire node id as the stream index
-        Quickshell.execDetached(["pactl", isRecording(node) ? "move-source-output" : "move-sink-input", String(node.id), device.name]);
+        // pipewire-pulse indexes streams by object.serial, not by the PipeWire node id
+        const serial = (node.properties ?? {})["object.serial"];
+        if (serial === undefined)
+            return;
+        Quickshell.execDetached(["pactl", isRecording(node) ? "move-source-output" : "move-sink-input", String(serial), device.name]);
     }
 
     function setVolume(node, value) {
