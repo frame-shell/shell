@@ -76,21 +76,11 @@ Scope {
         LauncherView {
             id: view
 
-            // 0 → 1 while a Claude answer takes over the launcher: it grows from the usual
-            // panel to nearly the whole screen, a frame's width from the edges
-            property real grown: answering ? 1 : 0
-            Behavior on grown {
-                NumberAnimation {
-                    duration: Theme.anim.fast
-                    easing.type: Easing.OutCubic
-                }
-            }
-            readonly property real edge: 48
-
-            width: 1100 + (parent.width - 2 * edge - 1100) * grown
-            height: 640 + (parent.height - 2 * edge - 640) * grown
+            // A Claude answer fills this box like the list does; the launcher never grows
+            width: 1100
+            height: 640
             anchors.horizontalCenter: parent.horizontalCenter
-            y: parent.height * 0.176 * (1 - grown) + edge * grown - 18 * (1 - root.shown)
+            y: parent.height * 0.176 - 18 * (1 - root.shown)
             opacity: root.shown
             scale: 0.985 + 0.015 * root.shown
 

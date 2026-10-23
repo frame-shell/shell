@@ -668,7 +668,7 @@ Item {
             category: "claude", glyph: "c", tint: Theme.accent, icon: "",
             body: answered ? Claude.answer : "",
             rows: [["model", Config.claudeModel || "cli default"]],
-            keys: answered ? "ctrl+c copy · enter copy & close · ↑↓ pgup pgdn scroll · esc close" : "enter ask"
+            keys: answered ? "ctrl+c copy · enter copy & close · ↑↓ scroll · esc close" : asked && Claude.busy ? "esc close · the answer waits here" : "enter ask"
         }];
     }
 

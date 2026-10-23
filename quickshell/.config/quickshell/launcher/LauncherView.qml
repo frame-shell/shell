@@ -33,9 +33,15 @@ Item {
     readonly property int maxRows: 9
     // Long lists (emoji, files, clipboard) scroll in windows of maxRows
     readonly property int first: Math.max(0, Math.min(current - maxRows + 1, results.length - maxRows))
-    // Claude has answered the question that is typed: the launcher grows to (almost) the
-    // whole screen (Launcher.qml) and shows the answer as selectable text instead of the list
+    // Claude has answered the question that is typed: the answer takes the place of the list
+    // and the info pane, in the launcher's own size; while it thinks, a line with the seconds
     readonly property bool answering: selected?.kind === "claude" && selected.answered === true
+    readonly property bool thinking: selected?.kind === "claude" && !selected.answered && Claude.busy && Claude.question === selected.question
+    // The answer as blocks to draw: [{ kind: "p" | "h" | "item" | "code", html, text, lang }]
+    readonly property var answerBlocks: answering ? parseAnswer(Claude.answer) : []
+    property int thinkSeconds: 0
+    property int spinFrame: 0
+    readonly property string spinner: "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏".charAt(spinFrame % 10)
     // "copied …" under the answer for a moment after a copy
     property string copied: ""
 
@@ -90,10 +96,91 @@ Item {
 
     // Ctrl+C in the answer view: the selected part of the answer, else all of it
     function copyAnswer(all) {
-        const part = all ? "" : answerText.selectedText;
+        const part = all ? "" : answerSelection();
         modes.copy(part !== "" ? part : Claude.answer);
         copied = part !== "" ? `copied ${part.length} of ${Claude.answer.length} characters` : "copied the whole answer";
         copiedTimer.restart();
+    }
+
+    function copyCode(text) {
+        modes.copy(text);
+        copied = "copied the code block";
+        copiedTimer.restart();
+    }
+
+    // The selection sits in one block at a time
+    function answerSelection() {
+        for (let i = 0; i < blockRepeater.count; i++) {
+            const part = blockRepeater.itemAt(i)?.selection() ?? "";
+            if (part !== "")
+                return part;
+        }
+        return "";
+    }
+
+    function clearAnswerSelection() {
+        let had = false;
+        for (let i = 0; i < blockRepeater.count; i++)
+            had = (blockRepeater.itemAt(i)?.deselect() ?? false) || had;
+        return had;
+    }
+
+    // The bits of Markdown Claude answers with: paragraphs, headings, - and 1. lists, ```
+    // code blocks; `code` and **bold** inside a line
+    function inlineHtml(line) {
+        const esc = line.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+        return esc
+            .replace(/`([^`]+)`/g, `<span style="color:${Theme.secondary};background-color:${Theme.surface}">&nbsp;$1&nbsp;</span>`)
+            .replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>");
+    }
+
+    function parseAnswer(md) {
+        const out = [];
+        const lines = md.split("\n");
+        let i = 0;
+        while (i < lines.length) {
+            const line = lines[i];
+            if (/^\s*```/.test(line)) {
+                const lang = line.trim().slice(3).trim();
+                const code = [];
+                i++;
+                while (i < lines.length && !/^\s*```/.test(lines[i]))
+                    code.push(lines[i++]);
+                i++;
+                out.push({ kind: "code", text: code.join("\n"), lang: lang || "text", html: "" });
+            } else if (/^#{1,6}\s/.test(line)) {
+                const title = line.replace(/^#+\s*/, "");
+                out.push({ kind: "h", html: `<span style="color:${Theme.frame}">## </span><span style="color:${Theme.primary}">${inlineHtml(title)}</span>`, text: title, lang: "" });
+                i++;
+            } else if (/^\s*([-*]|\d+\.)\s/.test(line)) {
+                const item = line.replace(/^\s*([-*]|\d+\.)\s+/, "");
+                out.push({ kind: "item", html: inlineHtml(item), text: item, lang: "" });
+                i++;
+            } else if (line.trim() === "") {
+                i++;
+            } else {
+                const para = [];
+                while (i < lines.length && lines[i].trim() !== "" && !/^\s*(```|[-*]\s|\d+\.\s|#{1,6}\s)/.test(lines[i]))
+                    para.push(lines[i++].trim());
+                out.push({ kind: "p", html: inlineHtml(para.join(" ")), text: para.join(" "), lang: "" });
+            }
+        }
+        return out;
+    }
+
+    Timer {
+        running: root.thinking
+        interval: 90
+        repeat: true
+        onTriggered: root.spinFrame += 1
+    }
+
+    Timer {
+        running: root.thinking
+        interval: 500
+        repeat: true
+        triggeredOnStart: true
+        onTriggered: root.thinkSeconds = Math.floor((Date.now() - Claude.askedAt) / 1000)
     }
 
     function scrollAnswer(by) {
@@ -221,8 +308,8 @@ Item {
                                 root.scrollAnswer(-answerFlick.contentHeight);
                             else if (ctrl && event.key === Qt.Key_End)
                                 root.scrollAnswer(answerFlick.contentHeight);
-                            else if (event.key === Qt.Key_Escape && answerText.selectedText !== "")
-                                answerText.deselect();
+                            else if (event.key === Qt.Key_Escape && root.answerSelection() !== "")
+                                root.clearAnswerSelection();
                             else
                                 handled = false;
                             if (handled) {
@@ -275,23 +362,56 @@ Item {
 
             Divider { Layout.fillWidth: true }
 
-            // Claude's answer, over the whole launcher: selectable, scrolls, copy button
+            // Claude, in place of the list and the info pane: the wait, then the answer as
+            // blocks (text, headings, list items, code with its own copy), selectable, scrolls
             Item {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
-                visible: root.answering
+                visible: root.answering || root.thinking
+
+                Column {
+                    anchors.centerIn: parent
+                    visible: root.thinking
+                    spacing: 16
+
+                    Label {
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        text: `${root.spinner}  claude · ${Config.claudeModel || "cli default"} is thinking · ${root.thinkSeconds} s`
+                        color: Theme.muted
+                    }
+
+                    Rectangle {
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        width: 360
+                        height: 2
+                        color: Theme.border
+                        clip: true
+
+                        Rectangle {
+                            width: 108
+                            height: 2
+                            color: Theme.accent
+
+                            SequentialAnimation on x {
+                                running: root.thinking
+                                loops: Animation.Infinite
+                                NumberAnimation { from: -108; to: 360; duration: 1400; easing.type: Easing.InOutSine }
+                            }
+                        }
+                    }
+                }
 
                 ColumnLayout {
                     anchors.fill: parent
-                    anchors.leftMargin: 48
-                    anchors.rightMargin: 48
-                    anchors.topMargin: 30
-                    anchors.bottomMargin: 24
-                    spacing: 18
+                    anchors.leftMargin: 30
+                    anchors.rightMargin: 30
+                    anchors.topMargin: 18
+                    visible: root.answering
+                    spacing: 14
 
                     RowLayout {
                         Layout.fillWidth: true
-                        spacing: 16
+                        spacing: 14
 
                         AppIcon {
                             glyph: "c"
@@ -300,8 +420,9 @@ Item {
 
                         Label {
                             Layout.fillWidth: true
-                            text: `── claude · ${Config.claudeModel || "cli default"} · ${Claude.answer.length} characters`
+                            text: `claude · ${Config.claudeModel || "cli default"} · ${Claude.took.toFixed(1)} s · ${Claude.answer.length} characters`
                             color: Theme.muted
+                            font.pixelSize: Theme.size.small
                             elide: Text.ElideRight
                         }
 
@@ -313,8 +434,8 @@ Item {
                         }
 
                         TuiButton {
-                            implicitWidth: copyLabel.implicitWidth + 32
-                            implicitHeight: copyLabel.implicitHeight + 14
+                            implicitWidth: copyLabel.implicitWidth + 24
+                            implicitHeight: copyLabel.implicitHeight + 10
                             accent: Theme.accent
                             active: root.copied !== ""
                             onClicked: root.copyAnswer(true)
@@ -329,51 +450,169 @@ Item {
                         }
                     }
 
-                    Rectangle {
+                    Item {
                         Layout.fillWidth: true
                         Layout.fillHeight: true
-                        color: Theme.surface
-                        border.width: 1
-                        border.color: Theme.border
+                        clip: true
 
-                        // Wheel scrolls; a press and drag selects text instead of flicking
+                        // Wheel and keys scroll; a press and drag selects text instead of flicking
                         Flickable {
                             id: answerFlick
 
                             anchors.fill: parent
-                            anchors.margins: 1
-                            anchors.rightMargin: 12
+                            anchors.rightMargin: 22
                             contentWidth: width
-                            contentHeight: answerText.implicitHeight + 64
-                            clip: true
+                            contentHeight: blocks.implicitHeight + 22
                             interactive: false
                             boundsBehavior: Flickable.StopAtBounds
 
-                            TextEdit {
-                                id: answerText
+                            Column {
+                                id: blocks
 
-                                x: 40
-                                y: 32
-                                // Lines stay readable on a wide screen
-                                width: Math.min(answerFlick.width - 80, 1500)
-                                text: root.answering ? Claude.answer : ""
-                                readOnly: true
-                                selectByMouse: true
-                                // The query line keeps the keyboard, so typing still edits the question
-                                activeFocusOnPress: false
-                                persistentSelection: true
-                                wrapMode: TextEdit.Wrap
-                                textFormat: TextEdit.PlainText
-                                color: Theme.text
-                                selectionColor: Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.55)
-                                selectedTextColor: Theme.text
-                                font.family: Theme.font
-                                font.pixelSize: 22
+                                y: 4
+                                // About 84 characters a line stay readable
+                                width: Math.min(answerFlick.width, 860)
+                                spacing: 12
 
-                                MouseArea {
-                                    anchors.fill: parent
-                                    acceptedButtons: Qt.NoButton
-                                    cursorShape: Qt.IBeamCursor
+                                Repeater {
+                                    id: blockRepeater
+
+                                    model: root.answerBlocks
+
+                                    delegate: Item {
+                                        id: block
+
+                                        required property var modelData
+                                        readonly property bool isCode: modelData.kind === "code"
+
+                                        function selection() {
+                                            return isCode ? codeText.selectedText : prose.selectedText;
+                                        }
+
+                                        function deselect() {
+                                            const had = selection() !== "";
+                                            codeText.deselect();
+                                            prose.deselect();
+                                            return had;
+                                        }
+
+                                        width: blocks.width
+                                        height: isCode ? codeBox.height : prose.height + (modelData.kind === "h" ? 6 : 0)
+
+                                        // List items get an accent dot in front
+                                        Text {
+                                            visible: block.modelData.kind === "item"
+                                            x: 8
+                                            y: prose.y
+                                            text: "·"
+                                            color: Theme.accent
+                                            font.family: Theme.font
+                                            font.pixelSize: 17
+                                            font.bold: true
+                                        }
+
+                                        TextEdit {
+                                            id: prose
+
+                                            visible: !block.isCode
+                                            x: block.modelData.kind === "item" ? 26 : 0
+                                            y: block.modelData.kind === "h" ? 6 : 0
+                                            width: parent.width - x
+                                            text: block.isCode ? "" : block.modelData.html
+                                            textFormat: TextEdit.RichText
+                                            readOnly: true
+                                            selectByMouse: true
+                                            // The query line keeps the keyboard, so typing still edits the question
+                                            activeFocusOnPress: false
+                                            persistentSelection: true
+                                            wrapMode: TextEdit.Wrap
+                                            color: Theme.text
+                                            selectionColor: Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.55)
+                                            selectedTextColor: Theme.text
+                                            font.family: Theme.font
+                                            font.pixelSize: 17
+                                            font.weight: block.modelData.kind === "h" ? Font.Medium : Font.Normal
+
+                                            MouseArea {
+                                                anchors.fill: parent
+                                                acceptedButtons: Qt.NoButton
+                                                cursorShape: Qt.IBeamCursor
+                                            }
+                                        }
+
+                                        // Code: its own box with the language and a copy of just this
+                                        Rectangle {
+                                            id: codeBox
+
+                                            visible: block.isCode
+                                            width: parent.width
+                                            height: block.isCode ? codeText.height + 26 : 0
+                                            color: Theme.surface
+
+                                            Rectangle {
+                                                width: 2
+                                                height: parent.height
+                                                color: Theme.accent
+                                            }
+
+                                            TextEdit {
+                                                id: codeText
+
+                                                x: 18
+                                                y: 13
+                                                width: parent.width - 36 - codeTools.width
+                                                text: block.isCode ? block.modelData.text : ""
+                                                textFormat: TextEdit.PlainText
+                                                readOnly: true
+                                                selectByMouse: true
+                                                activeFocusOnPress: false
+                                                persistentSelection: true
+                                                wrapMode: TextEdit.WrapAnywhere
+                                                color: Theme.textDim
+                                                selectionColor: Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.55)
+                                                selectedTextColor: Theme.text
+                                                font.family: Theme.font
+                                                font.pixelSize: 15
+
+                                                MouseArea {
+                                                    anchors.fill: parent
+                                                    acceptedButtons: Qt.NoButton
+                                                    cursorShape: Qt.IBeamCursor
+                                                }
+                                            }
+
+                                            Row {
+                                                id: codeTools
+
+                                                anchors.right: parent.right
+                                                anchors.top: parent.top
+                                                anchors.margins: 8
+                                                spacing: 8
+
+                                                Label {
+                                                    anchors.verticalCenter: parent.verticalCenter
+                                                    text: block.modelData.lang ?? ""
+                                                    color: Theme.muted
+                                                    font.pixelSize: 12
+                                                }
+
+                                                TuiButton {
+                                                    implicitWidth: codeCopy.implicitWidth + 16
+                                                    implicitHeight: codeCopy.implicitHeight + 6
+                                                    accent: Theme.accent
+                                                    onClicked: root.copyCode(block.modelData.text)
+
+                                                    Label {
+                                                        id: codeCopy
+                                                        anchors.centerIn: parent
+                                                        text: "⧉ copy"
+                                                        color: parent.hovered ? Theme.text : Theme.secondary
+                                                        font.pixelSize: 12
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -386,10 +625,10 @@ Item {
                         // Scroll position, only when the answer is longer than the box
                         Rectangle {
                             visible: answerFlick.contentHeight > answerFlick.height
-                            x: parent.width - 8
-                            y: 4 + (parent.height - 8 - height) * (answerFlick.contentY / Math.max(1, answerFlick.contentHeight - answerFlick.height))
+                            x: parent.width - 3
+                            y: (parent.height - height) * (answerFlick.contentY / Math.max(1, answerFlick.contentHeight - answerFlick.height))
                             width: 3
-                            height: Math.max(40, (parent.height - 8) * answerFlick.height / Math.max(1, answerFlick.contentHeight))
+                            height: Math.max(40, parent.height * answerFlick.height / Math.max(1, answerFlick.contentHeight))
                             color: Theme.frame
                         }
                     }
@@ -400,7 +639,7 @@ Item {
             RowLayout {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
-                visible: !root.answering
+                visible: !root.answering && !root.thinking
                 spacing: 0
 
                 Item {
@@ -782,7 +1021,7 @@ Item {
                     color: root.armed !== "" ? Theme.warn : Theme.frame
                     font.pixelSize: Theme.size.small
                     elide: Text.ElideLeft
-                    Layout.maximumWidth: root.answering ? 900 : 420
+                    Layout.maximumWidth: root.answering ? 640 : 420
                 }
             }
         }

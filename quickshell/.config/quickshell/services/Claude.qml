@@ -21,13 +21,17 @@ Singleton {
     property string answer: ""
     property string error: ""
     readonly property bool busy: proc.running
+    // When the question went out (ms) and how long the answer took (s), for the launcher
+    property real askedAt: 0
+    property real took: 0
 
     readonly property string workDir: `${Quickshell.env("HOME")}/.local/state/frameshell/claude`
     readonly property string withPath: 'export PATH="$HOME/.local/bin:$HOME/.npm-global/bin:$HOME/.local/share/npm/bin:$PATH"; '
 
+    // The launcher shows Markdown (paragraphs, lists, code blocks), so a command can come as one
     readonly property string instructions: "You answer quick questions typed into a desktop launcher. "
-        + "Reply in at most three short sentences of plain text, no markdown, no lists. "
-        + "Use the language of the question."
+        + "Be brief: a few sentences, or a short list and a code block when a command helps. "
+        + "Plain Markdown only, no tables. Use the language of the question."
 
     function ask(text) {
         const q = text.trim();
@@ -39,6 +43,8 @@ Singleton {
         error = "";
         const model = Config.claudeModel !== "" ? ["--model", Config.claudeModel] : [];
         proc.asked = q;
+        askedAt = Date.now();
+        took = 0;
         // First line of the output: exit code; the rest: the answer or the error. stdin is
         // closed, or claude waits 3 s for piped input and prints a warning into the answer.
         proc.command = ["sh", "-c", withPath + 'mkdir -p "$0" && cd "$0" || exit 1; out=$(claude "$@" 2>&1 </dev/null); printf "%s\\n%s" "$?" "$out"',
@@ -56,6 +62,7 @@ Singleton {
                 const newline = text.indexOf("\n");
                 const code = newline < 0 ? text.trim() : text.slice(0, newline);
                 const out = newline < 0 ? "" : text.slice(newline + 1).trim();
+                root.took = (Date.now() - root.askedAt) / 1000;
                 if (code === "0" && out !== "")
                     root.answer = out;
                 else
