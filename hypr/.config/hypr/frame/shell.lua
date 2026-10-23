@@ -49,17 +49,24 @@ take("SUPER + L", shell("lock", "lock"), { description = "frame shell · lock" }
 -- Hyprland still takes keys when the shell hangs: this restarts it without waiting for the
 -- watchdog (frame-shell-watchdog), the lock comes back if it was on
 take("SUPER + SHIFT + Escape", hl.dsp.exec_cmd("~/.local/bin/frame-shell-watchdog restart"), { description = "frame shell · restart the shell (when it hangs)" })
--- Ctrl+Alt+Q types an @ (the Windows habit; for a keyboard without a working AltGr).
--- Hyprland sends AltGr+Q (MOD5) straight to the focused window, so the app sees the
--- real key and no virtual keyboard shows up as a layout change. The launcher is a layer, not
--- a window, so while it is open the @ goes to it over IPC instead (else it lands behind it).
-take("CTRL + ALT + Q", function()
-    if #hl.get_layers({ namespace = "qs-launcher" }) > 0 then
-        hl.exec_cmd("qs ipc call launcher type @")
-    else
-        hl.dispatch(hl.dsp.exec_raw("sendshortcut", "MOD5, q, activewindow"))
-    end
-end, { description = "frame shell · type @" })
+-- Ctrl+Alt+Q types an @ and Ctrl+Alt+E a € (the Windows habit; for a keyboard without a
+-- working AltGr). Hyprland sends AltGr+key (MOD5) straight to the focused window, so the app
+-- sees the real key and no virtual keyboard shows up as a layout change. The launcher is a
+-- layer, not a window, so while it is open the character goes to it over IPC instead (else it
+-- lands behind it). Vesktop (Chromium on Wayland) types nothing for that AltGr+key: it gets
+-- Ctrl+Alt+key itself and the ShellBridge plugin inserts the character.
+for key, char in pairs({ q = "@", e = "€" }) do
+    take("CTRL + ALT + " .. key:upper(), function()
+        local w = hl.get_active_window()
+        if #hl.get_layers({ namespace = "qs-launcher" }) > 0 then
+            hl.exec_cmd("qs ipc call launcher type " .. char)
+        elseif w and w.class == "vesktop" then
+            hl.dispatch(hl.dsp.exec_raw("sendshortcut", "CTRL ALT, " .. key .. ", activewindow"))
+        else
+            hl.dispatch(hl.dsp.exec_raw("sendshortcut", "MOD5, " .. key .. ", activewindow"))
+        end
+    end, { description = "frame shell · type " .. char })
+end
 
 -- Screenshots (the distro binds Print to grim + slurp; the shell has its own picker)
 take("Print", shell("screenshot", "region"), { description = "frame shell · screenshot: region or window" })
