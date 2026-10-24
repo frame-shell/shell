@@ -369,7 +369,8 @@ local function summon(address)
         return
     end
     -- A game on the games workspace (shell.lua, Super+Tab) stays there: the screen goes to it
-    if w.workspace and w.workspace.name == "gaming" then
+    -- and from the games an app is not pulled over to them, the screen goes to its workspace
+    if (w.workspace and w.workspace.name == "gaming") or ws.name == "gaming" then
         run(hl.dsp.focus({ window = sel(w) }))
         return
     end

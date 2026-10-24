@@ -129,7 +129,7 @@ Singleton {
     // Brings a running window to the current view: on the canvas into the middle of the
     // focused screen (canvas.lua summon), otherwise onto the active workspace, and focuses
     // it. A game on the games workspace (shell.lua, Super+Tab) stays there: the screen goes
-    // to it
+    // to it; seen from the games, an app is not pulled over either, the screen goes to it
     function summon(address) {
         if (CanvasLayout.enabled) {
             CanvasLayout.summon(address);
@@ -138,7 +138,7 @@ Singleton {
         const a = String(address).replace(/[^0-9a-fx]/gi, "");
         Quickshell.execDetached(["hyprctl", "eval",
             `local w = hl.get_window("address:${a}") local ws = hl.get_active_workspace() `
-            + `if w and ws and not (w.workspace and w.workspace.name == "gaming") then `
+            + `if w and ws and ws.name ~= "gaming" and not (w.workspace and w.workspace.name == "gaming") then `
             + `hl.dispatch(hl.dsp.window.move({ workspace = tostring(ws.id), follow = false, window = "address:${a}" })) end `
             + `if w then hl.dispatch(hl.dsp.focus({ window = "address:${a}" })) end`]);
     }

@@ -116,6 +116,49 @@ function frame_games.toggle()
         end
     end
 end
+-- Games and their launch windows by the same marks the distro's rules use; Wine/Proton
+-- windows (.exe) count too, so a game outside Steam is never moved away
+function frame_games.is_game(w)
+    local class = w.class or ""
+    return class:match("^steam_app") ~= nil or class == "gamescope" or class:match("%.exe$") ~= nil
+        or w.content_type == "game" or (class == "steam" and (w.title or ""):match("^Launching") ~= nil)
+end
+
+-- The monitor's desktop workspace: the last one before the games, else its first normal one
+function frame_games.desktop(mon)
+    local last = hl.get_last_workspace(mon)
+    if last and not last.special and last.name ~= GAME_WS then
+        return tostring(last.id)
+    end
+    for _, w in ipairs(hl.get_workspaces() or {}) do
+        if w.monitor and w.monitor.name == mon.name and not w.special and w.name ~= GAME_WS then
+            return tostring(w.id)
+        end
+    end
+    return "1"
+end
+
+-- An app started while the games are on screen opened on the games workspace and was gone
+-- with the next Super+Tab; it goes to the desktop instead and the screen follows it
+hl.on("window.open", function(w)
+    local ws = w.workspace
+    local mon = w.monitor
+    if not (ws and mon and ws.name == GAME_WS) or frame_games.is_game(w) then
+        return
+    end
+    local active = mon.active_workspace
+    if not (active and active.name == GAME_WS) then
+        return
+    end
+    local address = w.address
+    hl.dispatch(hl.dsp.window.move({ workspace = frame_games.desktop(mon), window = "address:" .. address }))
+    -- The canvas placed it in the games' view; into the desktop's view once the move is done
+    if frame_canvas then
+        hl.timer(function()
+            frame_canvas.into_view(address)
+        end, { timeout = 50, type = "oneshot" })
+    end
+end)
 take("SUPER + Tab", frame_games.toggle, { description = "frame windows · games ↔ desktop (Steam games run on their own workspace)" })
 take("SUPER + ALT + S", function()
     local w = hl.get_active_window()
