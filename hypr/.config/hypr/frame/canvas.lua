@@ -32,8 +32,6 @@ local GAP = 24
 local NEW_W, NEW_H = 0.55, 0.65
 
 local cams = {}
--- Windows that floated on their own (dialogs, pickers) keep their size and place
-local native_float = {}
 local snapshot
 
 -- ── Helpers ──────────────────────────────────────────────────
@@ -523,8 +521,20 @@ end
 -- behind a crowded middle used to pull the whole desktop along before it went fullscreen).
 -- With no free spot in view it is stacked slightly offset in the middle; one bigger than
 -- the screen goes to the top left corner
+-- Dialogs and pickers stay where their app puts them: a window whose process already has
+-- one open. (Every new window floats by the time the events see it, the canvas rule below
+-- included, so floating says nothing about being a dialog.)
+local function of_open_app(w)
+    for _, o in ipairs(hl.get_windows() or {}) do
+        if o.address ~= w.address and o.pid == w.pid and o.mapped then
+            return true
+        end
+    end
+    return false
+end
+
 local function place_new(w)
-    if native_float[w.address] or not w.floating or w.pinned then
+    if not w.floating or w.pinned or of_open_app(w) then
         return
     end
     local ws = w.workspace
@@ -689,8 +699,7 @@ end
 
 load_cams()
 
--- Windows that would tile float instead, at a comfortable size; dialogs already float
--- and are left alone (match float = false only sees how the window started)
+-- Windows that would tile float instead, at a comfortable size
 hl.window_rule({
     name = "frame-canvas",
     match = { float = false },
@@ -710,12 +719,6 @@ local function on(event, fn)
         end
     end)
 end
-
-on("window.open_early", function(w)
-    if w.floating then
-        native_float[w.address] = true
-    end
-end)
 
 -- An app started over a fullscreen window (from the launcher) was drawn on top, but the
 -- fullscreen window under it kept the mouse: the fullscreen ends, as with summon. Dialogs
@@ -759,17 +762,6 @@ on("window.fullscreen", function(w)
         end
         snapshot()
     end, { timeout = 150, type = "oneshot" })
-end)
-
--- The window is being torn down here; its fields may already be gone, and the window
--- list still has it for a moment, so the snapshot waits for the next timer tick
-on("window.destroy", function(w)
-    local ok, address = pcall(function()
-        return w.address
-    end)
-    if ok and address then
-        native_float[address] = nil
-    end
 end)
 
 on("window.close", snapshot)
@@ -830,6 +822,27 @@ bind("SUPER + CTRL + C", function()
 end, "center the window")
 bind("SUPER + CTRL + H", home, "back to the start")
 bind("SUPER + CTRL + G", tidy, "tidy into a grid")
+
+-- One canvas per monitor and the games workspace (shell.lua), nothing else: the distro's
+-- numbered workspaces only hid windows away from the canvas. Their binds go (spelled like
+-- config/binds.lua, keys by keycode: digit d is code:9+d, 0 is code:19) and the
+-- workspaces beyond the first are no longer kept open while empty.
+local function drop(keys)
+    for _ = 1, 4 do
+        pcall(hl.unbind, keys)
+    end
+end
+drop("SUPER + CONTROL + SHIFT + Right")
+drop("SUPER + CONTROL + SHIFT + Left")
+for d = 0, 9 do
+    local key = "code:" .. (d == 0 and 19 or 9 + d)
+    for _, mods in ipairs({ "SHIFT + CONTROL", "SHIFT + ALT", "ALT", "CONTROL" }) do
+        drop("SUPER + " .. mods .. " + " .. key)
+    end
+end
+for i = 2, 10 do
+    hl.workspace_rule({ workspace = tostring(i), persistent = false })
+end
 
 -- Super+wheel: zoom out into the overview (quickshell/canvas/CanvasOverview.qml), zoom
 -- back in on the window under the cursor. The overview takes plain wheel, drag and clicks itself.
