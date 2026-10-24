@@ -192,13 +192,14 @@ local function is_fullscreen(w)
     return f == true or (type(f) == "number" and f > 0)
 end
 
--- Ends fullscreen on that workspace only, never on the focused window of another one
-local function leave_fullscreen(ws)
+-- Ends fullscreen on that workspace only, never on the focused window of another one;
+-- the window with address `keep` stays as it is
+local function leave_fullscreen(ws, keep)
     if not (ws and ws.has_fullscreen) then
         return
     end
     for _, w in ipairs(hl.get_workspace_windows(ws) or {}) do
-        if is_fullscreen(w) then
+        if is_fullscreen(w) and w.address ~= keep then
             run(hl.dsp.window.fullscreen({ window = sel(w) }))
         end
     end
@@ -344,18 +345,40 @@ local function pick(address)
     center_on(w)
 end
 
--- Dragged in the overview: puts the window's top left corner at global canvas point x, y.
--- A point on another monitor's canvas moves the window to that monitor first.
-local function move_to(address, x, y, name)
+-- A desktop window never goes onto the games workspace (shell.lua): only games live there
+local function takes(ws, w)
+    return ws.name ~= "gaming" or (frame_games and frame_games.is_game(w))
+end
+
+-- Dragged in the overview: puts the window's top left corner at global canvas point x, y
+-- of the named monitor's canvas. While the drag goes on the window stays on its workspace
+-- (a quick drag past the screen's edge used to throw it onto the other monitor, behind the
+-- fullscreen window there). Only the drop (final) moves it to another monitor, and only when
+-- its middle is on that screen; a fullscreen window there ends, so the dropped one shows.
+local function move_to(address, x, y, name, final)
     local w, own = find_window(address)
     if not w then
         return
     end
-    local target = view_at(x + w.size.x / 2, y + w.size.y / 2, name) or own
+    local from = view_at(x + w.size.x / 2, y + w.size.y / 2, name) or own
+    -- Layout coordinates: the same for every workspace
+    local lx, ly = math.floor(x - from.cam.x), math.floor(y - from.cam.y)
+    local target = own
+    if final then
+        local on = view_on_screen(lx + w.size.x / 2, ly + w.size.y / 2)
+        if on and on.ws.id ~= own.ws.id and takes(on.ws, w) then
+            target = on
+        end
+    end
     if target.ws.id ~= own.ws.id then
+        leave_fullscreen(target.ws)
         run(hl.dsp.window.move({ workspace = tostring(target.ws.id), follow = false, window = sel(w) }))
     end
-    run(hl.dsp.window.move({ x = math.floor(x - target.cam.x), y = math.floor(y - target.cam.y), window = sel(w) }))
+    run(hl.dsp.window.move({ x = lx, y = ly, window = sel(w) }))
+    if target.ws.id ~= own.ws.id then
+        run(hl.dsp.focus({ window = sel(w) }))
+        run(hl.dsp.window.bring_to_top())
+    end
     snapshot()
 end
 
@@ -410,6 +433,9 @@ local function fullscreen_on(address)
     end
     -- Where the window is on the screens right now decides, not the (overlapping) canvases
     local target = view_on_screen(w.at.x + w.size.x / 2, w.at.y + w.size.y / 2) or own
+    if not takes(target.ws, w) then
+        target = own
+    end
     if target.ws.id ~= own.ws.id then
         run(hl.dsp.window.move({ workspace = tostring(target.ws.id), follow = false, window = sel(w) }))
         w = find_window(address) or w
@@ -691,7 +717,26 @@ on("window.open_early", function(w)
     end
 end)
 
+-- An app started over a fullscreen window (from the launcher) was drawn on top, but the
+-- fullscreen window under it kept the mouse: the fullscreen ends, as with summon. Dialogs
+-- of the fullscreen app (same process) and the games workspace are left alone.
+local function over_fullscreen(w)
+    local ws = w.workspace
+    local full = ws and ws.fullscreen_window
+    if not full or ws.special or ws.name == "gaming" or full.address == w.address or full.pid == w.pid then
+        return
+    end
+    leave_fullscreen(ws, w.address)
+    local address = w.address
+    -- Leaving fullscreen raises the old window; the new one goes back on top
+    hl.timer(function()
+        run(hl.dsp.focus({ window = "address:" .. address }))
+        run(hl.dsp.window.bring_to_top())
+    end, { timeout = 150, type = "oneshot" })
+end
+
 on("window.open", function(w)
+    over_fullscreen(w)
     place_new(w)
     snapshot()
 end)

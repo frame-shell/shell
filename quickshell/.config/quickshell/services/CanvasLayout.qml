@@ -98,10 +98,10 @@ Singleton {
         run(`frame_canvas.select("${addr(address)}")`);
     }
 
-    // Puts the window's top left corner at canvas point x, y; on another monitor's canvas
-    // it moves there (overview drag)
-    function moveTo(address, x, y, monitor) {
-        run(`frame_canvas.move_to("${addr(address)}", ${Math.round(x)}, ${Math.round(y)}, ${monitorArg(monitor)})`);
+    // Puts the window's top left corner at canvas point x, y (overview drag); dropped
+    // (final) with its middle on another screen, it moves to that monitor
+    function moveTo(address, x, y, monitor, final) {
+        run(`frame_canvas.move_to("${addr(address)}", ${Math.round(x)}, ${Math.round(y)}, ${monitorArg(monitor)}, ${final ? "true" : "false"})`);
     }
 
     // Enter in the launcher on an app that already runs: its window comes into the middle

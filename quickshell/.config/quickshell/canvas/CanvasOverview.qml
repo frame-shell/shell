@@ -258,16 +258,17 @@ Scope {
     }
 
     // The window's top left corner on the map → canvas coordinates of the screen it is over
-    function sendDrag() {
+    // Only the drop (final) may move it to another monitor (canvas.lua move_to)
+    function sendDrag(final) {
         const c = CanvasLayout.toCanvas(drag.x + 1, drag.y + 1);
-        CanvasLayout.moveTo(drag.address, c.x, c.y, c.monitor);
+        CanvasLayout.moveTo(drag.address, c.x, c.y, c.monitor, final);
     }
 
     function dragEnd() {
         if (!drag)
             return;
         dragSend.stop();
-        sendDrag();
+        sendDrag(true);
         dragSettle.restart();
     }
 
