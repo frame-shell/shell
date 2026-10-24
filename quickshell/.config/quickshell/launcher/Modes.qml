@@ -306,7 +306,8 @@ Item {
             title,
             desc: content ? `“${content}”` : line ? `${status ? `${status} · ` : ""}${line}` : c.username !== "" ? `@${c.username}` : "",
             body: content ? "" : line,
-            category: "discord", glyph: c.name.charAt(0).toUpperCase(), tint: Theme.accent, icon: c.avatar,
+            // The chip on the right tells a group DM from a person, both look alike otherwise
+            category: c.group ? "group" : "dm", glyph: c.name.charAt(0).toUpperCase(), tint: Theme.accent, icon: c.avatar,
             rows: (c.group ? [["group", c.username], ["dm", "open"]]
                 : [["user", c.username !== "" ? `@${c.username}` : c.name], ["dm", c.channelId ? "open" : "none yet"]]).concat(activity),
             keys: kind === "discord-open" ? (c.group ? "enter open group · shift+enter call" : "enter open dm · shift+enter call")
@@ -338,11 +339,11 @@ Item {
             const content = words.slice(2).join(" ");
             const found = findContacts(words[1]).slice(0, 9);
             return found.length === 0 ? [info(`nobody called ${words[1]}`)]
-                : found.map(c => contactRow(c, "discord-send", `message ${c.name}`, content));
+                : found.map(c => contactRow(c, "discord-send", `message ${c.group ? "group " : ""}${c.name}`, content));
         }
         if (first === "call" && words.length >= 2) {
             const found = findContacts(words.slice(1).join(" ")).slice(0, 9);
-            return found.length === 0 ? [info("nobody by that name")] : found.map(c => contactRow(c, "discord-call", `call ${c.name}`));
+            return found.length === 0 ? [info("nobody by that name")] : found.map(c => contactRow(c, "discord-call", `call ${c.group ? "group " : ""}${c.name}`));
         }
         const found = findContacts(rest);
         if (found.length === 0)
