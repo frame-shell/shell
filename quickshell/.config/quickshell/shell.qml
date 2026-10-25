@@ -32,22 +32,47 @@ ShellRoot {
         }
     }
 
-    // The media keys (frame/shell.lua): qs ipc call player toggle|next|prev. Like the bar:
-    // whatever is playing, then Spotify, then any player; no playerctl needed
+    // The media keys (frame/shell.lua): qs ipc call player toggle|next|prev, no playerctl
+    // needed. They act on the player that started playing last, so a second press plays the
+    // one the first paused (with Spotify and a video both playing, it went to the other one);
+    // without one: Spotify if it plays, else whatever plays, then Spotify, then any player
     Scope {
         id: mediaKeys
 
+        property MprisPlayer last: null
         readonly property MprisPlayer player: {
             const list = Mpris.players.values;
-            return list.find(p => p.isPlaying) ?? list.find(p => p.identity === "Spotify") ?? list[0] ?? null;
+            if (last && list.includes(last))
+                return last;
+            const spotify = list.find(p => p.identity === "Spotify");
+            return (spotify?.isPlaying ? spotify : null) ?? list.find(p => p.isPlaying) ?? spotify ?? list[0] ?? null;
+        }
+
+        // The player a key acts on stays the target, also once it is paused
+        function take() {
+            last = player;
+            return last;
+        }
+
+        Variants {
+            model: Mpris.players.values
+
+            Connections {
+                required property MprisPlayer modelData
+                target: modelData
+                function onIsPlayingChanged() {
+                    if (modelData.isPlaying)
+                        mediaKeys.last = modelData;
+                }
+            }
         }
 
         IpcHandler {
             target: "player"
 
-            function toggle(): void { mediaKeys.player?.togglePlaying(); }
-            function next(): void { mediaKeys.player?.next(); }
-            function prev(): void { mediaKeys.player?.previous(); }
+            function toggle(): void { mediaKeys.take()?.togglePlaying(); }
+            function next(): void { mediaKeys.take()?.next(); }
+            function prev(): void { mediaKeys.take()?.previous(); }
         }
     }
 
