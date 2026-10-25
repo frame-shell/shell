@@ -1,5 +1,7 @@
 import QtQuick
 import Quickshell
+import Quickshell.Io
+import Quickshell.Services.Mpris
 import qs.bar
 import qs.canvas
 import qs.controlcenter
@@ -27,6 +29,25 @@ ShellRoot {
             // A shell that died while the screen was locked left the wallpaper frozen
             // (frame-wallpaper pause); this one lets it run again
             Quickshell.execDetached(["sh", "-c", 'w="$HOME/.local/bin/frame-wallpaper"; [ -x "$w" ] && "$w" resume-if-paused']);
+        }
+    }
+
+    // The media keys (frame/shell.lua): qs ipc call player toggle|next|prev. Like the bar:
+    // whatever is playing, then Spotify, then any player; no playerctl needed
+    Scope {
+        id: mediaKeys
+
+        readonly property MprisPlayer player: {
+            const list = Mpris.players.values;
+            return list.find(p => p.isPlaying) ?? list.find(p => p.identity === "Spotify") ?? list[0] ?? null;
+        }
+
+        IpcHandler {
+            target: "player"
+
+            function toggle(): void { mediaKeys.player?.togglePlaying(); }
+            function next(): void { mediaKeys.player?.next(); }
+            function prev(): void { mediaKeys.player?.previous(); }
         }
     }
 

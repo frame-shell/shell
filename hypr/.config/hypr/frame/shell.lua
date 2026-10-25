@@ -68,6 +68,13 @@ for key, char in pairs({ q = "@", e = "€" }) do
     end, { description = "frame shell · type " .. char })
 end
 
+-- Media keys (the keyboard's Fn+F7/F8/F9): the distro calls playerctl, which is not always
+-- installed; the shell drives the player over MPRIS itself. Locked: also on the lockscreen
+take("XF86AudioPlay", shell("player", "toggle"), { locked = true, description = "frame shell · media: play / pause" })
+take("XF86AudioPause", shell("player", "toggle"), { locked = true, description = "frame shell · media: play / pause" })
+take("XF86AudioNext", shell("player", "next"), { locked = true, description = "frame shell · media: next track" })
+take("XF86AudioPrev", shell("player", "prev"), { locked = true, description = "frame shell · media: previous track" })
+
 -- Screenshots (the distro binds Print to grim + slurp; the shell has its own picker)
 take("Print", shell("screenshot", "region"), { description = "frame shell · screenshot: region or window" })
 take("SHIFT + Print", shell("screenshot", "screen"), { description = "frame shell · screenshot: whole screen" })
